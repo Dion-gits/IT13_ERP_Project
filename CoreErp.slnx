@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="CoreErp.Api/CoreErp.Api.csproj" />
+  <Project Path="CoreErp.Domain/CoreErp.Domain.csproj" />
+  <Project Path="CoreErp.Infrastructure/CoreErp.Infrastructure.csproj" />
+  <Project Path="CoreErp.WinForms/CoreErp.WinForms.csproj" />
+</Solution>

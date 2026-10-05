@@ -1,0 +1,25 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ReaLTaiizor" Version="3.8.2.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Views\Roles\HrManager\" />
+    <Folder Include="Views\Roles\BranchManager\" />
+    <Folder Include="Views\Roles\InventoryStaff\" />
+    <Folder Include="Views\Roles\Cashier\" />
+    <Folder Include="Views\Roles\Shared\" />
+    <Folder Include="Views\Roles\Owner\" />
+    <Folder Include="Views\Roles\SuperAdmin\" />
+  </ItemGroup>
+
+</Project>

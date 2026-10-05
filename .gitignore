@@ -1,0 +1,38 @@
+# ── .NET build outputs ──
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.suo
+*.userprefs
+
+# ── Visual Studio ──
+.vs/
+*.vsidx
+*.vsp
+*.vssscc
+
+# ── NuGet ──
+*.nupkg
+*.snupkg
+packages/
+
+# ── SQL / Local DB files ──
+*.mdf
+*.ldf
+*.ndf
+*.bak
+
+# ── IDE ──
+.vscode/
+.idea/
+*.swp
+
+# ── OS ──
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Config with secrets ──
+secrets.json
