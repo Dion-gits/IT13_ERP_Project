@@ -29,7 +29,7 @@ public class PosView : UserControl
     private Button _btnPlaceOrder = null!;
     private Button _btnNone = null!, _btnSenior = null!, _btnPwd = null!;
     private Button _btnCash = null!, _btnGCash = null!;
-    private Panel _pnlCashFields = null!;
+    private TableLayoutPanel _pnlCashFields = null!;
     private readonly List<Button> _categoryButtons = new();
     private readonly Dictionary<int, decimal> _pendingQty = new(); // productId → qty on card before add
 
@@ -94,38 +94,47 @@ public class PosView : UserControl
             BackColor = AppTheme.AppBackground,
             Padding = new Padding(0, 0, 16, 0)
         };
-        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));  // title + search
-        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));  // category tabs
-        left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));   // title + search
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));   // category tabs
+        left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));   // product cards
 
-        // Title row + search
-        var topRow = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent };
+        // ── Title row + search — 2-column grid so nothing collides on resize ──
+        var topRow = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            BackColor = Color.Transparent,
+            Margin = new Padding(0)
+        };
+        topRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58));
+        topRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42));
+
         topRow.Controls.Add(new Label
         {
             Text = "Product Lists",
             Font = AppTheme.FontHeading,
             ForeColor = AppTheme.TextPrimary,
-            Location = new Point(0, 10),
-            AutoSize = true
-        });
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft
+        }, 0, 0);
+
         _txtSearch = new TextBox
         {
-            Anchor = AnchorStyles.Top | AnchorStyles.Right,
-            Width = 260,
-            Height = 32,
+            Dock = DockStyle.Fill,
             Font = AppTheme.FontBody,
             BackColor = AppTheme.CardBackground,
             ForeColor = AppTheme.TextPrimary,
             BorderStyle = BorderStyle.FixedSingle,
-            PlaceholderText = "🔍  Search for product…"
+            PlaceholderText = "🔍  Search for product…",
+            Margin = new Padding(8, 6, 0, 6)
         };
-        topRow.Resize += (s, e) => _txtSearch.Location = new Point(topRow.Width - 268, 6);
-        _txtSearch.Location = new Point(400, 6);
         _txtSearch.TextChanged += (s, e) => RebuildCards();
-        topRow.Controls.Add(_txtSearch);
+        topRow.Controls.Add(_txtSearch, 1, 0);
+
         left.Controls.Add(topRow, 0, 0);
 
-        // Category tabs
+        // ── Category tabs ────────────────────────────────────────────────
         _categoryBar = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -141,6 +150,7 @@ public class PosView : UserControl
         AddCategoryChip("Out of Stock", false);
         left.Controls.Add(_categoryBar, 0, 1);
 
+        // ── Product cards host ───────────────────────────────────────────
         var cardsHost = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Color.Transparent };
         _productCards = new FlowLayoutPanel
         {
@@ -174,7 +184,7 @@ public class PosView : UserControl
             MinimumSize = new Size(80, 34),
             Height = 34,
             FlatStyle = FlatStyle.Flat,
-            Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
+            Font = AppTheme.FontOf(9.5f, FontStyle.Bold),
             Cursor = Cursors.Hand,
             Margin = new Padding(0, 0, 8, 0),
             Padding = new Padding(14, 0, 14, 0),
@@ -271,7 +281,7 @@ public class PosView : UserControl
             e.Graphics.FillEllipse(circle, 53, 25, 80, 80);
 
             var letter = string.IsNullOrEmpty(p.ProductName) ? "?" : p.ProductName[0].ToString().ToUpper();
-            using var font = new Font("Segoe UI", 26, FontStyle.Bold);
+            using var font = AppTheme.FontOf(26, FontStyle.Bold);
             using var textBrush = new SolidBrush(AppTheme.Primary);
             var size = e.Graphics.MeasureString(letter, font);
             e.Graphics.DrawString(letter, font, textBrush,
@@ -286,7 +296,7 @@ public class PosView : UserControl
             Location = new Point(12, 140),
             Size = new Size(186, 36),
             ForeColor = AppTheme.TextPrimary,
-            Font = new Font("Segoe UI", 10, FontStyle.Bold),
+            Font = AppTheme.FontOf(10, FontStyle.Bold),
             BackColor = Color.Transparent
         };
 
@@ -297,7 +307,7 @@ public class PosView : UserControl
             Location = new Point(12, 176),
             Size = new Size(120, 20),
             ForeColor = AppTheme.TextPrimary,
-            Font = new Font("Segoe UI", 11, FontStyle.Bold),
+            Font = AppTheme.FontOf(11, FontStyle.Bold),
             BackColor = Color.Transparent
         };
 
@@ -330,7 +340,7 @@ public class PosView : UserControl
             Padding = new Padding(6, 2, 6, 2),
             BackColor = tagBg,
             ForeColor = tagFg,
-            Font = new Font("Segoe UI", 8, FontStyle.Bold)
+            Font = AppTheme.FontOf(8, FontStyle.Bold)
         };
 
         // Qty stepper + Add to cart (bottom)
@@ -352,7 +362,7 @@ public class PosView : UserControl
             FlatStyle = FlatStyle.Flat,
             BackColor = AppTheme.SurfaceRaised,
             ForeColor = AppTheme.TextPrimary,
-            Font = new Font("Segoe UI", 12, FontStyle.Bold),
+            Font = AppTheme.FontOf(12, FontStyle.Bold),
             Cursor = Cursors.Hand
         };
         btnMinus.FlatAppearance.BorderSize = 0;
@@ -371,7 +381,7 @@ public class PosView : UserControl
             Location = new Point(32, 2),
             Size = new Size(28, 32),
             ForeColor = AppTheme.TextPrimary,
-            Font = new Font("Segoe UI", 11, FontStyle.Bold),
+            Font = AppTheme.FontOf(11, FontStyle.Bold),
             TextAlign = ContentAlignment.MiddleCenter,
             BackColor = Color.Transparent
         };
@@ -384,7 +394,7 @@ public class PosView : UserControl
             FlatStyle = FlatStyle.Flat,
             BackColor = AppTheme.SurfaceRaised,
             ForeColor = AppTheme.TextPrimary,
-            Font = new Font("Segoe UI", 12, FontStyle.Bold),
+            Font = AppTheme.FontOf(12, FontStyle.Bold),
             Cursor = Cursors.Hand
         };
         btnPlus.FlatAppearance.BorderSize = 0;
@@ -407,7 +417,7 @@ public class PosView : UserControl
             FlatStyle = FlatStyle.Flat,
             BackColor = p.QuantityOnHand <= 0 ? AppTheme.SurfaceRaised : AppTheme.Primary,
             ForeColor = p.QuantityOnHand <= 0 ? AppTheme.TextMuted : Color.White,
-            Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
+            Font = AppTheme.FontOf(8.5f, FontStyle.Bold),
             Cursor = p.QuantityOnHand <= 0 ? Cursors.Default : Cursors.Hand,
             Enabled = p.QuantityOnHand > 0
         };
@@ -461,34 +471,46 @@ public class PosView : UserControl
             RowCount = 5,
             BackColor = Color.Transparent
         };
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 40));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 220));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));    // title row
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));    // items (fill remaining)
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));    // clear-all row
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 300));   // summary
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));    // proceed button
 
-        // Title
-        var titleRow = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent };
+        // ── Title row: Cart Details | item count ─────────────────────
+        var titleRow = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            BackColor = Color.Transparent,
+            Margin = new Padding(0)
+        };
+        titleRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60));
+        titleRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
+
         titleRow.Controls.Add(new Label
         {
             Text = "Cart Details",
             Font = AppTheme.FontHeading,
             ForeColor = AppTheme.TextPrimary,
-            Location = new Point(0, 6),
-            AutoSize = true
-        });
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft
+        }, 0, 0);
+
         _lblCartCount = new Label
         {
             Text = "0 items",
             Font = AppTheme.FontSmall,
             ForeColor = AppTheme.TextMuted,
-            Location = new Point(120, 10),
-            AutoSize = true
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleRight
         };
-        titleRow.Controls.Add(_lblCartCount);
+        titleRow.Controls.Add(_lblCartCount, 1, 0);
+
         layout.Controls.Add(titleRow, 0, 0);
 
-        // Items
+        // ── Items ────────────────────────────────────────────────────
         var cartHost = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Color.Transparent };
         _cartItems = new FlowLayoutPanel
         {
@@ -501,6 +523,7 @@ public class PosView : UserControl
         cartHost.Controls.Add(_cartItems);
         layout.Controls.Add(cartHost, 0, 1);
 
+        // ── Clear all items ──────────────────────────────────────────
         var btnClear = new LinkLabel
         {
             Text = "Clear all items",
@@ -508,7 +531,9 @@ public class PosView : UserControl
             ActiveLinkColor = AppTheme.PrimaryHover,
             Font = AppTheme.FontSmall,
             AutoSize = true,
-            Location = new Point(0, 6)
+            Dock = DockStyle.Left,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Padding = new Padding(0, 6, 0, 0)
         };
         btnClear.Click += (s, e) =>
         {
@@ -519,11 +544,13 @@ public class PosView : UserControl
         clearWrap.Controls.Add(btnClear);
         layout.Controls.Add(clearWrap, 0, 2);
 
+        // ── Summary ──────────────────────────────────────────────────
         layout.Controls.Add(BuildSummaryPanel(), 0, 3);
 
+        // ── Proceed payment button ───────────────────────────────────
         _btnPlaceOrder = AppTheme.MakePrimaryButton("Proceed payment", 0, 46);
         _btnPlaceOrder.Dock = DockStyle.Fill;
-        _btnPlaceOrder.Font = new Font("Segoe UI", 11, FontStyle.Bold);
+        _btnPlaceOrder.Font = AppTheme.FontOf(11, FontStyle.Bold);
         _btnPlaceOrder.Click += async (s, e) => await PlaceOrderAsync();
         layout.Controls.Add(_btnPlaceOrder, 0, 4);
 
@@ -566,7 +593,7 @@ public class PosView : UserControl
                 e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
                 using var brush = new SolidBrush(AppTheme.SidebarActive);
                 e.Graphics.FillEllipse(brush, 0, 0, 38, 38);
-                using var font = new Font("Segoe UI", 12, FontStyle.Bold);
+                using var font = AppTheme.FontOf(12, FontStyle.Bold);
                 using var tb = new SolidBrush(AppTheme.Primary);
                 var sz = e.Graphics.MeasureString(letter, font);
                 e.Graphics.DrawString(letter, font, tb, (38 - sz.Width) / 2, (38 - sz.Height) / 2);
@@ -578,7 +605,7 @@ public class PosView : UserControl
                 Location = new Point(56, 8),
                 Size = new Size(140, 20),
                 ForeColor = AppTheme.TextPrimary,
-                Font = new Font("Segoe UI", 9, FontStyle.Bold),
+                Font = AppTheme.FontOf(9, FontStyle.Bold),
                 BackColor = Color.Transparent
             };
             var price = new Label
@@ -600,7 +627,7 @@ public class PosView : UserControl
                 FlatStyle = FlatStyle.Flat,
                 BackColor = AppTheme.SurfaceRaised,
                 ForeColor = AppTheme.TextPrimary,
-                Font = new Font("Segoe UI", 10, FontStyle.Bold),
+                Font = AppTheme.FontOf(10, FontStyle.Bold),
                 Cursor = Cursors.Hand
             };
             btnM.FlatAppearance.BorderSize = 0;
@@ -613,7 +640,7 @@ public class PosView : UserControl
                 Location = new Point(226, 16),
                 Size = new Size(24, 26),
                 ForeColor = AppTheme.TextPrimary,
-                Font = new Font("Segoe UI", 10, FontStyle.Bold),
+                Font = AppTheme.FontOf(10, FontStyle.Bold),
                 TextAlign = ContentAlignment.MiddleCenter,
                 BackColor = Color.Transparent
             };
@@ -626,7 +653,7 @@ public class PosView : UserControl
                 FlatStyle = FlatStyle.Flat,
                 BackColor = AppTheme.SurfaceRaised,
                 ForeColor = AppTheme.TextPrimary,
-                Font = new Font("Segoe UI", 10, FontStyle.Bold),
+                Font = AppTheme.FontOf(10, FontStyle.Bold),
                 Cursor = Cursors.Hand
             };
             btnP.FlatAppearance.BorderSize = 0;
@@ -648,39 +675,68 @@ public class PosView : UserControl
 
     private Panel BuildSummaryPanel()
     {
-        var pnl = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent };
-        int y = 2;
-
-        void MoneyRow(string left, out Label rightLbl, bool bold = false)
+        var root = new TableLayoutPanel
         {
-            pnl.Controls.Add(new Label
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 6,
+            BackColor = Color.Transparent,
+            Padding = new Padding(0, 4, 0, 4)
+        };
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));    // subtotal
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));    // discount
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));    // discount chips
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));    // total
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));    // payment chips
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));    // amount received + change
+
+        // ── Helper: 2-column money row ──
+        TableLayoutPanel MoneyRow(string label, out Label valueLabel, bool bold = false)
+        {
+            var row = new TableLayoutPanel
             {
-                Text = left,
-                ForeColor = AppTheme.TextSecondary,
-                Font = bold ? new Font("Segoe UI", 10, FontStyle.Bold) : AppTheme.FontBody,
-                Location = new Point(0, y),
-                AutoSize = true
-            });
-            rightLbl = new Label
+                Dock = DockStyle.Fill,
+                ColumnCount = 2,
+                RowCount = 1,
+                BackColor = Color.Transparent,
+                Margin = new Padding(0)
+            };
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
+
+            row.Controls.Add(new Label
+            {
+                Text = label,
+                Dock = DockStyle.Fill,
+                ForeColor = bold ? AppTheme.TextPrimary : AppTheme.TextSecondary,
+                Font = bold ? AppTheme.FontOf(12, FontStyle.Bold) : AppTheme.FontBody,
+                TextAlign = ContentAlignment.MiddleLeft
+            }, 0, 0);
+
+            valueLabel = new Label
             {
                 Text = "₱0.00",
-                ForeColor = bold ? AppTheme.TextPrimary : AppTheme.TextPrimary,
-                Font = bold ? new Font("Segoe UI", 13, FontStyle.Bold) : AppTheme.FontBody,
-                Location = new Point(180, y - (bold ? 2 : 0)),
-                AutoSize = true
+                Dock = DockStyle.Fill,
+                ForeColor = AppTheme.TextPrimary,
+                Font = bold ? AppTheme.FontOf(15, FontStyle.Bold) : AppTheme.FontBody,
+                TextAlign = ContentAlignment.MiddleRight
             };
-            pnl.Controls.Add(rightLbl);
-            y += bold ? 26 : 22;
+            row.Controls.Add(valueLabel, 1, 0);
+            return row;
         }
 
-        MoneyRow("Sub total", out _lblSubtotal);
-        MoneyRow("Discount", out _lblDiscount);
+        // ── Row 0 & 1: subtotal + discount ──
+        root.Controls.Add(MoneyRow("Sub total", out _lblSubtotal), 0, 0);
+        root.Controls.Add(MoneyRow("Discount", out _lblDiscount), 0, 1);
 
-        var discFlow = new FlowLayoutPanel
+        // ── Row 2: discount chips ──
+        var discRow = new FlowLayoutPanel
         {
-            Location = new Point(0, y),
-            Size = new Size(320, 32),
-            FlowDirection = FlowDirection.LeftToRight
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = Color.Transparent,
+            Padding = new Padding(0, 6, 0, 6)
         };
         _btnNone = MakeToggle("None", true);
         _btnSenior = MakeToggle("Senior", false);
@@ -688,73 +744,86 @@ public class PosView : UserControl
         _btnNone.Click += (s, e) => SetDiscount("None");
         _btnSenior.Click += (s, e) => SetDiscount("Senior");
         _btnPwd.Click += (s, e) => SetDiscount("PWD");
-        discFlow.Controls.AddRange(new Control[] { _btnNone, _btnSenior, _btnPwd });
-        pnl.Controls.Add(discFlow);
-        y += 36;
+        discRow.Controls.AddRange(new Control[] { _btnNone, _btnSenior, _btnPwd });
+        root.Controls.Add(discRow, 0, 2);
 
-        MoneyRow("Total amount", out _lblTotal, bold: true);
-        y += 4;
+        // ── Row 3: total amount (big) ──
+        root.Controls.Add(MoneyRow("Total amount", out _lblTotal, bold: true), 0, 3);
 
-        var payFlow = new FlowLayoutPanel
+        // ── Row 4: payment chips ──
+        var payChips = new FlowLayoutPanel
         {
-            Location = new Point(0, y),
-            Size = new Size(320, 32),
-            FlowDirection = FlowDirection.LeftToRight
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = Color.Transparent,
+            Padding = new Padding(0, 2, 0, 2)
         };
         _btnCash = MakeToggle("Cash", true);
         _btnGCash = MakeToggle("GCash", false);
         _btnCash.Click += (s, e) => SetPayment("Cash");
         _btnGCash.Click += (s, e) => SetPayment("GCash");
-        payFlow.Controls.AddRange(new Control[] { _btnCash, _btnGCash });
-        pnl.Controls.Add(payFlow);
-        y += 36;
+        payChips.Controls.AddRange(new Control[] { _btnCash, _btnGCash });
+        root.Controls.Add(payChips, 0, 4);
 
-        _pnlCashFields = new Panel
+        // ── Row 5: amount received + change (hidden on GCash) ──
+        _pnlCashFields = new TableLayoutPanel
         {
-            Location = new Point(0, y),
-            Size = new Size(320, 46),
-            BackColor = Color.Transparent
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 2,
+            BackColor = Color.Transparent,
+            Margin = new Padding(0)
         };
+        _pnlCashFields.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        _pnlCashFields.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        _pnlCashFields.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
+        _pnlCashFields.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        // Row 0: labels
         _pnlCashFields.Controls.Add(new Label
         {
             Text = "Amount received",
+            Dock = DockStyle.Fill,
             ForeColor = AppTheme.TextSecondary,
             Font = AppTheme.FontSmall,
-            Location = new Point(0, 0),
-            AutoSize = true
-        });
-        _txtAmountPaid = new TextBox
-        {
-            Location = new Point(0, 16),
-            Width = 130,
-            Height = 28,
-            Font = AppTheme.FontBody,
-            BackColor = AppTheme.InputBg,
-            ForeColor = AppTheme.TextPrimary,
-            BorderStyle = BorderStyle.FixedSingle
-        };
-        _txtAmountPaid.TextChanged += (s, e) => RecomputeTotals();
-        _pnlCashFields.Controls.Add(_txtAmountPaid);
+            TextAlign = ContentAlignment.MiddleLeft
+        }, 0, 0);
         _pnlCashFields.Controls.Add(new Label
         {
             Text = "Change",
+            Dock = DockStyle.Fill,
             ForeColor = AppTheme.TextSecondary,
             Font = AppTheme.FontSmall,
-            Location = new Point(150, 0),
-            AutoSize = true
-        });
+            TextAlign = ContentAlignment.MiddleRight
+        }, 1, 0);
+
+        // Row 1: input + change value
+        _txtAmountPaid = new TextBox
+        {
+            Dock = DockStyle.Fill,
+            Font = AppTheme.FontOf(11),
+            BackColor = AppTheme.InputBg,
+            ForeColor = AppTheme.TextPrimary,
+            BorderStyle = BorderStyle.FixedSingle,
+            Margin = new Padding(0, 2, 8, 4)
+        };
+        _txtAmountPaid.TextChanged += (s, e) => RecomputeTotals();
+        _pnlCashFields.Controls.Add(_txtAmountPaid, 0, 1);
+
         _lblChange = new Label
         {
             Text = "₱0.00",
+            Dock = DockStyle.Fill,
             ForeColor = AppTheme.Success,
-            Font = new Font("Segoe UI", 11, FontStyle.Bold),
-            Location = new Point(150, 16),
-            AutoSize = true
+            Font = AppTheme.FontOf(13, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleRight
         };
-        _pnlCashFields.Controls.Add(_lblChange);
-        pnl.Controls.Add(_pnlCashFields);
+        _pnlCashFields.Controls.Add(_lblChange, 1, 1);
 
-        return pnl;
+        root.Controls.Add(_pnlCashFields, 0, 5);
+
+        return root;
     }
 
     private Button MakeToggle(string text, bool active)
@@ -762,9 +831,9 @@ public class PosView : UserControl
         var btn = new Button
         {
             Text = text,
-            Size = new Size(80, 28),
+            Size = new Size(88, 34),
             FlatStyle = FlatStyle.Flat,
-            Font = new Font("Segoe UI", 9, FontStyle.Bold),
+            Font = AppTheme.FontOf(9.5f, FontStyle.Bold),
             Cursor = Cursors.Hand,
             Margin = new Padding(0, 0, 8, 0)
         };
@@ -801,7 +870,10 @@ public class PosView : UserControl
         _paymentMethod = method;
         ApplyToggle(_btnCash, method == "Cash");
         ApplyToggle(_btnGCash, method == "GCash");
+
+        // Hide the entire "Amount received + Change" section for GCash
         _pnlCashFields.Visible = method == "Cash";
+
         RecomputeTotals();
     }
 
@@ -970,99 +1042,154 @@ public class PosView : UserControl
 
     private void ShowPaymentSuccess(SaleReceipt r)
     {
+        var metaRows = new List<(string Label, string Value)>
+        {
+            ("Order ID",       r.InvoiceNumber),
+            ("Payment Method", r.PaymentMethod),
+            ("Payment Time",   r.SaleDate.ToLocalTime().ToString("MM/dd/yyyy hh:mm tt"))
+        };
+        if (r.DiscountAmount > 0)
+            metaRows.Add(("Discount", $"₱{r.DiscountAmount:N2} ({r.DiscountType})"));
+
         using var dlg = new Form
         {
             Text = "Payment Success",
-            Size = new Size(380, 480),
+            Size = new Size(460, 640),
             StartPosition = FormStartPosition.CenterParent,
             BackColor = AppTheme.CardBackground,
             FormBorderStyle = FormBorderStyle.FixedDialog,
             MaximizeBox = false,
             MinimizeBox = false,
-            ShowInTaskbar = false
+            ShowInTaskbar = false,
+            AutoScaleMode = AutoScaleMode.Font,
+            Padding = new Padding(0)
         };
 
-        var checkPanel = new Panel
+        var root = new TableLayoutPanel
         {
-            Location = new Point((dlg.ClientSize.Width - 72) / 2, 28),
-            Size = new Size(72, 72),
-            BackColor = Color.Transparent
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 5,
+            BackColor = Color.Transparent,
+            Padding = new Padding(32, 24, 32, 24)
         };
-        checkPanel.Paint += (s, e) =>
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 108));   // icon
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));    // title
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));    // amount
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));    // meta
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 128));   // buttons
+
+        // ── 1) Big green check ──────────────────────────────────────
+        var iconHost = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent };
+        var iconCircle = new Panel { Size = new Size(80, 80), BackColor = Color.Transparent };
+        iconHost.Controls.Add(iconCircle);
+        iconHost.Resize += (s, e) =>
+        {
+            iconCircle.Left = (iconHost.Width - iconCircle.Width) / 2;
+            iconCircle.Top = (iconHost.Height - iconCircle.Height) / 2;
+        };
+        iconCircle.Paint += (s, e) =>
         {
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             using var brush = new SolidBrush(AppTheme.Success);
-            e.Graphics.FillEllipse(brush, 0, 0, 70, 70);
-            using var font = new Font("Segoe UI", 28, FontStyle.Bold);
+            e.Graphics.FillEllipse(brush, 0, 0, 79, 79);
+            using var font = AppTheme.FontOf(30, FontStyle.Bold);
             using var white = new SolidBrush(Color.White);
-            var sz = e.Graphics.MeasureString("✓", font);
-            e.Graphics.DrawString("✓", font, white, (70 - sz.Width) / 2, (70 - sz.Height) / 2 - 2);
+            var fmt = new StringFormat
+            {
+                Alignment = StringAlignment.Center,
+                LineAlignment = StringAlignment.Center
+            };
+            e.Graphics.DrawString("✓", font, white, new RectangleF(0, 0, 80, 80), fmt);
         };
-        dlg.Controls.Add(checkPanel);
+        root.Controls.Add(iconHost, 0, 0);
 
-        dlg.Controls.Add(new Label
+        // ── 2) Title ────────────────────────────────────────────────
+        root.Controls.Add(new Label
         {
             Text = "Payment Success!",
-            Font = new Font("Segoe UI", 16, FontStyle.Bold),
+            Dock = DockStyle.Fill,
+            Font = AppTheme.FontOf(18, FontStyle.Bold),
             ForeColor = AppTheme.TextPrimary,
-            Location = new Point(0, 112),
-            Size = new Size(dlg.ClientSize.Width, 30),
             TextAlign = ContentAlignment.MiddleCenter
-        });
-        dlg.Controls.Add(new Label
+        }, 0, 1);
+
+        // ── 3) Amount ───────────────────────────────────────────────
+        root.Controls.Add(new Label
         {
             Text = $"₱{r.TotalAmount:N2}",
-            Font = new Font("Segoe UI", 28, FontStyle.Bold),
+            Dock = DockStyle.Fill,
+            Font = AppTheme.FontOf(28, FontStyle.Bold),
             ForeColor = AppTheme.Primary,
-            Location = new Point(0, 148),
-            Size = new Size(dlg.ClientSize.Width, 44),
             TextAlign = ContentAlignment.MiddleCenter
-        });
+        }, 0, 2);
 
-        int y = 210;
-        void Meta(string label, string value)
+        // ── 4) Meta rows ────────────────────────────────────────────
+        var metaTable = new TableLayoutPanel
         {
-            dlg.Controls.Add(new Label
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = metaRows.Count,
+            BackColor = Color.Transparent,
+            Padding = new Padding(8, 8, 8, 8)
+        };
+        metaTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
+        metaTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));
+
+        for (int i = 0; i < metaRows.Count; i++)
+        {
+            metaTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
+            var (label, value) = metaRows[i];
+
+            metaTable.Controls.Add(new Label
             {
                 Text = label,
+                Dock = DockStyle.Fill,
                 ForeColor = AppTheme.TextMuted,
-                Font = AppTheme.FontSmall,
-                Location = new Point(40, y),
-                AutoSize = true
-            });
-            dlg.Controls.Add(new Label
+                Font = AppTheme.FontOf(10),
+                TextAlign = ContentAlignment.MiddleLeft
+            }, 0, i);
+
+            metaTable.Controls.Add(new Label
             {
                 Text = value,
+                Dock = DockStyle.Fill,
                 ForeColor = AppTheme.TextPrimary,
-                Font = AppTheme.FontBody,
-                Location = new Point(180, y),
-                Size = new Size(160, 20),
-                TextAlign = ContentAlignment.MiddleRight
-            });
-            y += 28;
+                Font = AppTheme.FontOf(10, FontStyle.Bold),
+                TextAlign = ContentAlignment.MiddleRight,
+                AutoEllipsis = true
+            }, 1, i);
         }
+        root.Controls.Add(metaTable, 0, 3);
 
-        Meta("Order ID", r.InvoiceNumber);
-        Meta("Payment Method", r.PaymentMethod);
-        Meta("Payment Time", r.SaleDate.ToLocalTime().ToString("MM/dd/yyyy hh:mm tt"));
-        if (r.DiscountAmount > 0)
-            Meta("Discount", $"₱{r.DiscountAmount:N2} ({r.DiscountType})");
+        // ── 5) Buttons ──────────────────────────────────────────────
+        var btnHost = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            BackColor = Color.Transparent
+        };
+        btnHost.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));
+        btnHost.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
 
-        var btnNew = AppTheme.MakePrimaryButton("New Order", 300, 44);
-        btnNew.Location = new Point(40, y + 12);
+        var btnNew = AppTheme.MakePrimaryButton("New Order", 0, 46);
+        btnNew.Dock = DockStyle.Fill;
         btnNew.Click += (s, e) => dlg.Close();
-        dlg.Controls.Add(btnNew);
+        btnHost.Controls.Add(btnNew, 0, 0);
 
-        var btnPrint = AppTheme.MakeGhostButton("🖨  Print Receipt", 300, 40);
-        btnPrint.Location = new Point(40, y + 66);
+        var btnPrint = AppTheme.MakeGhostButton("🖨  Print Receipt", 0, 42);
+        btnPrint.Dock = DockStyle.Fill;
         btnPrint.Click += (s, e) =>
         {
             dlg.Hide();
             ShowReceipt(r);
             dlg.Close();
         };
-        dlg.Controls.Add(btnPrint);
+        btnHost.Controls.Add(btnPrint, 0, 1);
+        root.Controls.Add(btnHost, 0, 4);
 
+        dlg.Controls.Add(root);
         dlg.ShowDialog(FindForm());
     }
 

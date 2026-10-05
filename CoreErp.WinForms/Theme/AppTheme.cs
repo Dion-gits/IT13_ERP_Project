@@ -42,14 +42,14 @@ public static class AppTheme
     public static readonly Color InfoBg = Color.FromArgb(230, 240, 255);
 
     // ── Fonts ───────────────────────────────────────────────────────────
-    public static readonly Font FontTitle = new("Segoe UI", 22, FontStyle.Bold);
-    public static readonly Font FontSubtitle = new("Segoe UI", 10.5f);
-    public static readonly Font FontHeading = new("Segoe UI", 12, FontStyle.Bold);
-    public static readonly Font FontBody = new("Segoe UI", 9.5f);
-    public static readonly Font FontSmall = new("Segoe UI", 8.5f);
-    public static readonly Font FontNavItem = new("Segoe UI", 10.5f);
-    public static readonly Font FontNavItemBold = new("Segoe UI", 10.5f, FontStyle.Bold);
-    public static readonly Font FontButton = new("Segoe UI", 10, FontStyle.Bold);
+    public static readonly Font FontTitle = FontOf(22, FontStyle.Bold);
+    public static readonly Font FontSubtitle = FontOf(10.5f);
+    public static readonly Font FontHeading = FontOf(12, FontStyle.Bold);
+    public static readonly Font FontBody = FontOf(9.5f);
+    public static readonly Font FontSmall = FontOf(8.5f);
+    public static readonly Font FontNavItem = FontOf(10.5f);
+    public static readonly Font FontNavItemBold = FontOf(10.5f, FontStyle.Bold);
+    public static readonly Font FontButton = FontOf(10, FontStyle.Bold);
     public static readonly Font FontMono = new("Consolas", 10f);
 
     // ── Helpers ─────────────────────────────────────────────────────────
@@ -71,6 +71,20 @@ public static class AppTheme
         return btn;
     }
 
+    // ── DPI-aware font sizing ──────────────────────────────────────────
+    // Returns a font scaled for the current DPI. Use everywhere instead of
+    // `new Font("Segoe UI", N)` so layout stays consistent on 125%/150% screens.
+    public static Font FontOf(float pointSize, FontStyle style = FontStyle.Regular)
+    {
+        using var g = Graphics.FromHwnd(IntPtr.Zero);
+        float scale = g.DpiY / 96f;
+        return new Font("Segoe UI", pointSize * scale, style, GraphicsUnit.Point);
+    }
+
+    // Consistent card padding / gaps
+    public const int Gap = 12;
+    public const int Pad = 16;
+
     public static Button MakeGhostButton(string text, int width = 120, int height = 36)
     {
         var btn = new Button
@@ -91,6 +105,7 @@ public static class AppTheme
 
     public static void StyleGrid(DataGridView g)
     {
+        g.AutoGenerateColumns = false;
         g.EnableHeadersVisualStyles = false;
         g.ColumnHeadersDefaultCellStyle.BackColor = TableHeaderBg;
         g.ColumnHeadersDefaultCellStyle.ForeColor = TextSecondary;

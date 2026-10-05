@@ -84,22 +84,27 @@ public class InventoryListView : UserControl
         pnlCards.Controls.Add(CreateStatCard("Est. Value", out _lblTotalValue));
 
         // ── Toolbar ─────────────────────────────────────────────────────
-        var pnlToolbar = new Panel
+        // ── Toolbar — FlowLayoutPanel so it never clips on narrow windows ──
+        var pnlToolbar = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
-            BackColor = AppTheme.AppBackground
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            AutoScroll = true,
+            BackColor = AppTheme.AppBackground,
+            Padding = new Padding(0, 8, 0, 8)
         };
 
         _txtSearch = new TextBox
         {
-            Location = new Point(0, 10),
-            Width = 320,
+            Width = 280,
             Height = 34,
             Font = AppTheme.FontBody,
             BackColor = AppTheme.InputBg,
             ForeColor = AppTheme.TextPrimary,
             BorderStyle = BorderStyle.FixedSingle,
-            PlaceholderText = "🔍  Search by code or name..."
+            PlaceholderText = "🔍  Search by code or name...",
+            Margin = new Padding(0, 0, 12, 0)
         };
         _txtSearch.KeyDown += (s, e) =>
         {
@@ -107,33 +112,33 @@ public class InventoryListView : UserControl
         };
         _txtSearch.TextChanged += (s, e) => ApplyFilter();
 
-        var btnAdd = AppTheme.MakePrimaryButton("＋  Add Product", 150, 36);
-        btnAdd.Location = new Point(340, 10);
+        var btnAdd = AppTheme.MakePrimaryButton("＋  Add Product", 140, 36);
+        btnAdd.Margin = new Padding(0, 0, 8, 0);
         btnAdd.Click += (s, e) => OpenProductDialog(null);
 
-        var btnEdit = AppTheme.MakeGhostButton("✏  Edit", 110, 36);
-        btnEdit.Location = new Point(500, 10);
+        var btnEdit = AppTheme.MakeGhostButton("✏  Edit", 100, 36);
+        btnEdit.Margin = new Padding(0, 0, 8, 0);
         btnEdit.Click += (s, e) =>
         {
             if (_selected == null) { SetStatus("Select a product first.", true); return; }
             OpenProductDialog(_selected);
         };
 
-        var btnArchive = AppTheme.MakeGhostButton("🗄  Archive", 120, 36);
+        var btnArchive = AppTheme.MakeGhostButton("🗄  Archive", 110, 36);
         btnArchive.ForeColor = AppTheme.Danger;
-        btnArchive.Location = new Point(620, 10);
+        btnArchive.Margin = new Padding(0, 0, 8, 0);
         btnArchive.Click += async (s, e) => await ArchiveProductAsync();
 
-        var btnAdjust = AppTheme.MakeGhostButton("📦  Adjust Stock", 140, 36);
-        btnAdjust.Location = new Point(750, 10);
+        var btnAdjust = AppTheme.MakeGhostButton("📦  Adjust Stock", 130, 36);
+        btnAdjust.Margin = new Padding(0, 0, 8, 0);
         btnAdjust.Click += (s, e) =>
         {
             if (_selected == null) { SetStatus("Select a product first.", true); return; }
             OpenAdjustDialog(_selected);
         };
 
-        var btnRefresh = AppTheme.MakeGhostButton("↻  Refresh", 110, 36);
-        btnRefresh.Location = new Point(900, 10);
+        var btnRefresh = AppTheme.MakeGhostButton("↻  Refresh", 100, 36);
+        btnRefresh.Margin = new Padding(0, 0, 12, 0);
         btnRefresh.Click += async (s, e) => await LoadProductsWithRetryAsync();
 
         _lblCount = new Label
@@ -142,14 +147,13 @@ public class InventoryListView : UserControl
             ForeColor = AppTheme.TextMuted,
             Font = AppTheme.FontSmall,
             AutoSize = true,
-            Anchor = AnchorStyles.Top | AnchorStyles.Right
+            Margin = new Padding(0, 10, 0, 0)
         };
 
         pnlToolbar.Controls.AddRange(new Control[]
         {
             _txtSearch, btnAdd, btnEdit, btnArchive, btnAdjust, btnRefresh, _lblCount
         });
-        pnlToolbar.Resize += (s, e) => _lblCount.Location = new Point(pnlToolbar.Width - 90, 18);
 
         // ── Grid ────────────────────────────────────────────────────────
         _grid = new DataGridView();
@@ -157,12 +161,12 @@ public class InventoryListView : UserControl
         _grid.Dock = DockStyle.Fill;
 
         _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Code", DataPropertyName = "ProductCode", FillWeight = 12 });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Product", DataPropertyName = "ProductName", FillWeight = 28 });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Product", DataPropertyName = "ProductName", FillWeight = 30 });
         _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Unit Price", DataPropertyName = "UnitPrice", FillWeight = 12, DefaultCellStyle = { Format = "C2", Alignment = DataGridViewContentAlignment.MiddleRight } });
         _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "On Hand", DataPropertyName = "QuantityOnHand", FillWeight = 10, DefaultCellStyle = { Alignment = DataGridViewContentAlignment.MiddleCenter } });
         _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Reorder", DataPropertyName = "ReorderLevel", FillWeight = 10, DefaultCellStyle = { Alignment = DataGridViewContentAlignment.MiddleCenter } });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "UoM", DataPropertyName = "UnitOfMeasure", FillWeight = 10, DefaultCellStyle = { Alignment = DataGridViewContentAlignment.MiddleCenter } });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Status", DataPropertyName = "StockStatus", FillWeight = 14, DefaultCellStyle = { Alignment = DataGridViewContentAlignment.MiddleCenter } });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "UoM", DataPropertyName = "UnitOfMeasure", FillWeight = 8, DefaultCellStyle = { Alignment = DataGridViewContentAlignment.MiddleCenter } });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Status", DataPropertyName = "StockStatus", FillWeight = 18, DefaultCellStyle = { Alignment = DataGridViewContentAlignment.MiddleCenter } });
 
         _grid.CellFormatting += Grid_CellFormatting;
         _grid.SelectionChanged += (s, e) =>

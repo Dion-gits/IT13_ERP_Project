@@ -72,12 +72,12 @@ public class TransactionHistoryView : UserControl
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 56));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-        // Stat cards
         var pnlCards = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = false,
+            AutoScroll = true,                 // ← ADD
             BackColor = Color.Transparent,
             Padding = new Padding(0, 8, 0, 8)
         };
@@ -87,52 +87,65 @@ public class TransactionHistoryView : UserControl
         pnlCards.Controls.Add(CreateStatCard("GCash Sales", out _lblGCashTotal));
         pnlCards.Controls.Add(CreateStatCard("Revenue", out _lblRevenue));
 
-        // Filters
-        var pnlFilters = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent };
-
-        var pills = new FlowLayoutPanel
+        // ── Filters — flow layout so nothing clips ──────────────────────
+        var pnlFilters = new FlowLayoutPanel
         {
-            Location = new Point(0, 10),
-            Size = new Size(520, 36),
+            Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false
+            WrapContents = false,
+            AutoScroll = true,
+            BackColor = Color.Transparent,
+            Padding = new Padding(0, 8, 0, 8)
         };
-        AddStatusPill(pills, "All", true);
-        AddStatusPill(pills, "Cash", false);
-        AddStatusPill(pills, "GCash", false);
-        AddStatusPill(pills, "Senior/PWD", false);
 
+        // Status pills (left side)
+        AddStatusPill(pnlFilters, "All", true);
+        AddStatusPill(pnlFilters, "Cash", false);
+        AddStatusPill(pnlFilters, "GCash", false);
+        AddStatusPill(pnlFilters, "Senior/PWD", false);
+
+        // Spacer — pushes the rest to the right
+        var spacer = new Panel
+        {
+            Width = 20,
+            Height = 36,
+            BackColor = Color.Transparent,
+            Margin = new Padding(0)
+        };
+        pnlFilters.Controls.Add(spacer);
+
+        // Search box
         _txtSearch = new TextBox
         {
-            Location = new Point(540, 12),
             Width = 240,
             Height = 32,
             Font = AppTheme.FontBody,
             BackColor = AppTheme.CardBackground,
             ForeColor = AppTheme.TextPrimary,
             BorderStyle = BorderStyle.FixedSingle,
-            PlaceholderText = "🔍  Search invoice or cashier…"
+            PlaceholderText = "🔍  Search invoice or cashier…",
+            Margin = new Padding(8, 2, 8, 0)
         };
         _txtSearch.TextChanged += (s, e) => ApplyFilter();
 
+        // Refresh button
         var btnRefresh = AppTheme.MakeGhostButton("↻  Refresh", 100, 32);
-        btnRefresh.Location = new Point(792, 12);
+        btnRefresh.Margin = new Padding(0, 2, 8, 0);
         btnRefresh.Click += async (s, e) => await LoadTransactionsWithRetryAsync();
 
+        // Result count
         _lblResultCount = new Label
         {
             Text = "0 results",
             ForeColor = AppTheme.TextMuted,
             Font = AppTheme.FontSmall,
             AutoSize = true,
-            Anchor = AnchorStyles.Top | AnchorStyles.Right
+            Margin = new Padding(0, 10, 0, 0)
         };
 
-        pnlFilters.Controls.Add(pills);
         pnlFilters.Controls.Add(_txtSearch);
         pnlFilters.Controls.Add(btnRefresh);
         pnlFilters.Controls.Add(_lblResultCount);
-        pnlFilters.Resize += (s, e) => _lblResultCount.Location = new Point(pnlFilters.Width - 90, 18);
 
         // Grid
         _grid = new DataGridView();
@@ -176,13 +189,13 @@ public class TransactionHistoryView : UserControl
         {
             Text = key,
             AutoSize = true,
-            MinimumSize = new Size(70, 32),
-            Height = 32,
+            MinimumSize = new Size(70, 34),
+            Height = 34,
             FlatStyle = FlatStyle.Flat,
             Font = new Font("Segoe UI", 9, FontStyle.Bold),
             Cursor = Cursors.Hand,
-            Margin = new Padding(0, 0, 8, 0),
-            Padding = new Padding(12, 0, 12, 0),
+            Margin = new Padding(0, 0, 8, 0),   // ← 8px gap between pills
+            Padding = new Padding(14, 0, 14, 0), // ← horizontal padding inside
             Tag = key
         };
         btn.FlatAppearance.BorderSize = 0;
@@ -216,10 +229,10 @@ public class TransactionHistoryView : UserControl
     {
         var card = new Panel
         {
-            Width = 200,
+            Width = 170,
             Height = 80,
             BackColor = AppTheme.CardBackground,
-            Margin = new Padding(0, 0, 12, 0)
+            Margin = new Padding(0, 0, 10, 0)
         };
         card.Paint += (s, e) =>
         {
