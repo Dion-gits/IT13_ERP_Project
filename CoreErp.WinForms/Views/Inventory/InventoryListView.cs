@@ -1,54 +1,64 @@
 ﻿using CoreErp.WinForms.Theme;
+using System.Drawing.Drawing2D;
 using System.Net.Http.Json;
 
 namespace CoreErp.WinForms.Views.Inventory;
 
+/// <summary>
+/// Inventory list with add / edit / archive / stock-adjust flows
+/// styled after the logo (dark + orange) and modern card dialogs.
+/// </summary>
 public class InventoryListView : UserControl
 {
-    // TODO: will come from login later
     private const int DefaultCompanyId = 1;
-
-    // TODO: change to your API URL if different
     private readonly HttpClient _http = new() { BaseAddress = new Uri("http://localhost:5067/") };
 
     private DataGridView _grid = null!;
-    private TextBox _txtName = null!;
-    private TextBox _txtPrice = null!;
-    private TextBox _txtReorder = null!;
-    private TextBox _txtInitialStock = null!;
     private TextBox _txtSearch = null!;
     private Label _lblStatus = null!;
+    private Label _lblCount = null!;
+    private Label _lblLowStock = null!;
+    private Label _lblTotalSku = null!;
+    private Label _lblTotalValue = null!;
 
     private List<ProductRow> _allProducts = new();
+    private ProductRow? _selected;
 
     public InventoryListView()
     {
         Dock = DockStyle.Fill;
         BackColor = AppTheme.AppBackground;
         BuildUI();
-        _ = LoadProductsAsync();
+        _ = LoadProductsWithRetryAsync();
     }
 
     private void BuildUI()
     {
-        var pnlHeader = new Panel { Dock = DockStyle.Top, Height = 80, BackColor = AppTheme.AppBackground };
+        // ── Header ──────────────────────────────────────────────────────
+        var pnlHeader = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 78,
+            BackColor = AppTheme.AppBackground
+        };
         pnlHeader.Controls.Add(new Label
         {
-            Text = "Inventory Management",
+            Text = "Inventory",
             Font = AppTheme.FontTitle,
             ForeColor = AppTheme.TextPrimary,
-            Location = new Point(0, 0),
+            Location = new Point(0, 4),
             AutoSize = true
         });
         pnlHeader.Controls.Add(new Label
         {
-            Text = "View and manage products, stock levels, and reorder points",
+            Text = "Manage products, stock levels, reorder points · Add · Edit · Archive · Adjust",
             Font = AppTheme.FontSubtitle,
             ForeColor = AppTheme.TextSecondary,
-            Location = new Point(2, 36),
+            Location = new Point(2, 40),
             AutoSize = true
         });
 
+        // ── Layout: stats → toolbar → grid ──────────────────────────────
         var layout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -56,178 +66,203 @@ public class InventoryListView : UserControl
             RowCount = 3,
             BackColor = AppTheme.AppBackground
         };
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 60));
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 40));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 56));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-        // Search
-        var pnlSearch = new Panel { Dock = DockStyle.Fill, BackColor = AppTheme.AppBackground };
+        // ── Stat cards ──────────────────────────────────────────────────
+        var pnlCards = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = AppTheme.AppBackground,
+            Padding = new Padding(0, 8, 0, 4)
+        };
+        pnlCards.Controls.Add(CreateStatCard("SKUs", out _lblTotalSku));
+        pnlCards.Controls.Add(CreateStatCard("Low Stock", out _lblLowStock));
+        pnlCards.Controls.Add(CreateStatCard("Est. Value", out _lblTotalValue));
+
+        // ── Toolbar ─────────────────────────────────────────────────────
+        var pnlToolbar = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = AppTheme.AppBackground
+        };
+
         _txtSearch = new TextBox
         {
-            Location = new Point(0, 8),
-            Width = 350,
-            Height = 32,
+            Location = new Point(0, 10),
+            Width = 320,
+            Height = 34,
             Font = AppTheme.FontBody,
             BackColor = AppTheme.InputBg,
             ForeColor = AppTheme.TextPrimary,
             BorderStyle = BorderStyle.FixedSingle,
             PlaceholderText = "🔍  Search by code or name..."
         };
+        _txtSearch.KeyDown += (s, e) =>
+        {
+            if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; ApplyFilter(); }
+        };
         _txtSearch.TextChanged += (s, e) => ApplyFilter();
-        pnlSearch.Controls.Add(_txtSearch);
 
-        var btnRefresh = new Button
+        var btnAdd = AppTheme.MakePrimaryButton("＋  Add Product", 150, 36);
+        btnAdd.Location = new Point(340, 10);
+        btnAdd.Click += (s, e) => OpenProductDialog(null);
+
+        var btnEdit = AppTheme.MakeGhostButton("✏  Edit", 110, 36);
+        btnEdit.Location = new Point(500, 10);
+        btnEdit.Click += (s, e) =>
         {
-            Text = "↻  Refresh",
-            Location = new Point(365, 6),
-            Size = new Size(120, 36),
-            FlatStyle = FlatStyle.Flat,
-            BackColor = AppTheme.CardBackground,
-            ForeColor = AppTheme.TextPrimary,
-            Font = AppTheme.FontButton,
-            Cursor = Cursors.Hand
+            if (_selected == null) { SetStatus("Select a product first.", true); return; }
+            OpenProductDialog(_selected);
         };
-        btnRefresh.FlatAppearance.BorderColor = AppTheme.Border;
-        btnRefresh.Click += async (s, e) => await LoadProductsAsync();
-        pnlSearch.Controls.Add(btnRefresh);
 
-        // Grid
-        _grid = new DataGridView
+        var btnArchive = AppTheme.MakeGhostButton("🗄  Archive", 120, 36);
+        btnArchive.ForeColor = AppTheme.Danger;
+        btnArchive.Location = new Point(620, 10);
+        btnArchive.Click += async (s, e) => await ArchiveProductAsync();
+
+        var btnAdjust = AppTheme.MakeGhostButton("📦  Adjust Stock", 140, 36);
+        btnAdjust.Location = new Point(750, 10);
+        btnAdjust.Click += (s, e) =>
         {
-            Dock = DockStyle.Fill,
-            ReadOnly = true,
-            AllowUserToAddRows = false,
-            AutoGenerateColumns = false,
-            AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
-            BackgroundColor = AppTheme.CardBackground,
-            ForeColor = AppTheme.TextPrimary,
-            GridColor = AppTheme.BorderLight,
-            BorderStyle = BorderStyle.FixedSingle,
-            SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-            MultiSelect = false,
-            RowHeadersVisible = false,
-            EnableHeadersVisualStyles = false,
-            RowTemplate = { Height = 36 }
+            if (_selected == null) { SetStatus("Select a product first.", true); return; }
+            OpenAdjustDialog(_selected);
         };
-        StyleGrid(_grid);
 
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "ID", DataPropertyName = "ProductId", FillWeight = 6 });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Code", DataPropertyName = "ProductCode", FillWeight = 14 });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Name", DataPropertyName = "ProductName", FillWeight = 30 });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Price", DataPropertyName = "UnitPrice", FillWeight = 12, DefaultCellStyle = { Format = "C2" } });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Stock", DataPropertyName = "QuantityOnHand", FillWeight = 12 });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Reorder", DataPropertyName = "ReorderLevel", FillWeight = 12 });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Status", DataPropertyName = "StockStatus", FillWeight = 14 });
+        var btnRefresh = AppTheme.MakeGhostButton("↻  Refresh", 110, 36);
+        btnRefresh.Location = new Point(900, 10);
+        btnRefresh.Click += async (s, e) => await LoadProductsWithRetryAsync();
 
-        _grid.CellClick += (s, e) => LoadSelectedIntoForm();
+        _lblCount = new Label
+        {
+            Text = "0 items",
+            ForeColor = AppTheme.TextMuted,
+            Font = AppTheme.FontSmall,
+            AutoSize = true,
+            Anchor = AnchorStyles.Top | AnchorStyles.Right
+        };
+
+        pnlToolbar.Controls.AddRange(new Control[]
+        {
+            _txtSearch, btnAdd, btnEdit, btnArchive, btnAdjust, btnRefresh, _lblCount
+        });
+        pnlToolbar.Resize += (s, e) => _lblCount.Location = new Point(pnlToolbar.Width - 90, 18);
+
+        // ── Grid ────────────────────────────────────────────────────────
+        _grid = new DataGridView();
+        AppTheme.StyleGrid(_grid);
+        _grid.Dock = DockStyle.Fill;
+
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Code", DataPropertyName = "ProductCode", FillWeight = 12 });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Product", DataPropertyName = "ProductName", FillWeight = 28 });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Unit Price", DataPropertyName = "UnitPrice", FillWeight = 12, DefaultCellStyle = { Format = "C2", Alignment = DataGridViewContentAlignment.MiddleRight } });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "On Hand", DataPropertyName = "QuantityOnHand", FillWeight = 10, DefaultCellStyle = { Alignment = DataGridViewContentAlignment.MiddleCenter } });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Reorder", DataPropertyName = "ReorderLevel", FillWeight = 10, DefaultCellStyle = { Alignment = DataGridViewContentAlignment.MiddleCenter } });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "UoM", DataPropertyName = "UnitOfMeasure", FillWeight = 10, DefaultCellStyle = { Alignment = DataGridViewContentAlignment.MiddleCenter } });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Status", DataPropertyName = "StockStatus", FillWeight = 14, DefaultCellStyle = { Alignment = DataGridViewContentAlignment.MiddleCenter } });
+
         _grid.CellFormatting += Grid_CellFormatting;
-
-        // Form
-        var pnlForm = new Panel
+        _grid.SelectionChanged += (s, e) =>
         {
-            Dock = DockStyle.Fill,
-            BackColor = AppTheme.CardBackground,
-            Padding = new Padding(24)
+            _selected = _grid.CurrentRow?.DataBoundItem as ProductRow;
         };
-        pnlForm.Paint += (s, e) =>
+        _grid.CellDoubleClick += (s, e) =>
         {
-            using var p = new Pen(AppTheme.Border, 1);
-            e.Graphics.DrawRectangle(p, 0, 0, pnlForm.Width - 1, pnlForm.Height - 1);
+            if (_selected != null) OpenProductDialog(_selected);
         };
 
-        int x = 24, y = 24;
-        (_txtName, _) = AddField(pnlForm, "Product Name", x, y, 400);
-        (_txtPrice, _) = AddField(pnlForm, "Unit Price (₱)", x + 420, y, 140);
-        (_txtReorder, _) = AddField(pnlForm, "Reorder Level", x + 580, y, 140);
-        (_txtInitialStock, _) = AddField(pnlForm, "Stock (or set new target)", x, y + 80, 200);
-
-        int btnY = y + 155;
-        var btnAdd = CreateButton("➕  Add Product", x, btnY, AppTheme.Success);
-        btnAdd.Click += async (s, e) => await CreateProductAsync();
-
-        var btnUpdate = CreateButton("✏  Update", x + 170, btnY, AppTheme.Primary);
-        btnUpdate.Click += async (s, e) => await UpdateProductAsync();
-
-        var btnDelete = CreateButton("🗑  Delete", x + 340, btnY, AppTheme.Danger);
-        btnDelete.Click += async (s, e) => await DeleteProductAsync();
-
-        var btnClear = CreateButton("✖  Clear Form", x + 510, btnY, AppTheme.TextSecondary);
-        btnClear.Click += (s, e) => ClearForm();
-
-        var btnAdjust = CreateButton("📦  Set Stock", x + 680, btnY, AppTheme.Warning);
-        btnAdjust.Click += async (s, e) => await AdjustStockAsync();
-
+        // ── Status ──────────────────────────────────────────────────────
         _lblStatus = new Label
         {
-            Text = "",
-            ForeColor = AppTheme.TextSecondary,
+            Text = "Ready.",
+            ForeColor = AppTheme.TextMuted,
             Font = AppTheme.FontSmall,
-            Location = new Point(x, btnY + 55),
-            AutoSize = true
+            Dock = DockStyle.Bottom,
+            Height = 26,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Padding = new Padding(4, 0, 0, 0)
         };
 
-        pnlForm.Controls.AddRange(new Control[] { btnAdd, btnUpdate, btnDelete, btnClear, btnAdjust, _lblStatus });
-
-        layout.Controls.Add(pnlSearch, 0, 0);
-        layout.Controls.Add(_grid, 0, 1);
-        layout.Controls.Add(pnlForm, 0, 2);
+        layout.Controls.Add(pnlCards, 0, 0);
+        layout.Controls.Add(pnlToolbar, 0, 1);
+        layout.Controls.Add(_grid, 0, 2);
 
         Controls.Add(layout);
+        Controls.Add(_lblStatus);
         Controls.Add(pnlHeader);
     }
 
-    private static void StyleGrid(DataGridView g)
+    // ── Stat card ───────────────────────────────────────────────────────
+    private static Panel CreateStatCard(string title, out Label valueLabel)
     {
-        g.ColumnHeadersDefaultCellStyle.BackColor = AppTheme.AppBackground;
-        g.ColumnHeadersDefaultCellStyle.ForeColor = AppTheme.TextSecondary;
-        g.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 8.5f, FontStyle.Bold);
-        g.ColumnHeadersHeight = 38;
-        g.DefaultCellStyle.BackColor = AppTheme.CardBackground;
-        g.DefaultCellStyle.ForeColor = AppTheme.TextPrimary;
-        g.DefaultCellStyle.SelectionBackColor = AppTheme.SidebarActive;
-        g.DefaultCellStyle.SelectionForeColor = AppTheme.Primary;
-        g.DefaultCellStyle.Padding = new Padding(6, 0, 0, 0);
-    }
-
-    private static (TextBox, int) AddField(Control parent, string label, int x, int y, int width)
-    {
-        var lbl = new Label
+        var card = new Panel
         {
-            Text = label,
+            Width = 220,
+            Height = 72,
+            BackColor = AppTheme.CardBackground,
+            Margin = new Padding(0, 0, 14, 0)
+        };
+        card.Paint += (s, e) =>
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using var path = RoundedRect(new Rectangle(0, 0, card.Width - 1, card.Height - 1), 10);
+            using var pen = new Pen(AppTheme.Border, 1);
+            e.Graphics.DrawPath(pen, path);
+        };
+
+        var table = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            Padding = new Padding(16, 10, 16, 10),
+            BackColor = Color.Transparent
+        };
+        table.RowStyles.Add(new RowStyle(SizeType.Percent, 45));
+        table.RowStyles.Add(new RowStyle(SizeType.Percent, 55));
+
+        var lblTitle = new Label
+        {
+            Text = title,
             ForeColor = AppTheme.TextSecondary,
-            Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
-            Location = new Point(x, y),
-            AutoSize = true
+            Font = new Font("Segoe UI", 9f, FontStyle.Bold),
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.BottomLeft
         };
-        var txt = new TextBox
+        valueLabel = new Label
         {
-            Location = new Point(x, y + 22),
-            Width = width,
-            Font = AppTheme.FontBody,
-            BackColor = AppTheme.InputBg,
-            ForeColor = AppTheme.TextPrimary,
-            BorderStyle = BorderStyle.FixedSingle
+            Text = "—",
+            ForeColor = AppTheme.Primary,
+            Font = new Font("Segoe UI", 18, FontStyle.Bold),
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.TopLeft
         };
-        parent.Controls.Add(lbl);
-        parent.Controls.Add(txt);
-        return (txt, x + width);
+        table.Controls.Add(lblTitle, 0, 0);
+        table.Controls.Add(valueLabel, 0, 1);
+        card.Controls.Add(table);
+        return card;
     }
 
-    private static Button CreateButton(string text, int x, int y, Color bg)
+    private static GraphicsPath RoundedRect(Rectangle bounds, int radius)
     {
-        var b = new Button
-        {
-            Text = text,
-            Location = new Point(x, y),
-            Size = new Size(160, 40),
-            BackColor = bg,
-            ForeColor = Color.White,
-            Font = AppTheme.FontButton,
-            FlatStyle = FlatStyle.Flat,
-            Cursor = Cursors.Hand
-        };
-        b.FlatAppearance.BorderSize = 0;
-        return b;
+        var path = new GraphicsPath();
+        int d = radius * 2;
+        path.AddArc(bounds.X, bounds.Y, d, d, 180, 90);
+        path.AddArc(bounds.Right - d, bounds.Y, d, d, 270, 90);
+        path.AddArc(bounds.Right - d, bounds.Bottom - d, d, d, 0, 90);
+        path.AddArc(bounds.X, bounds.Bottom - d, d, d, 90, 90);
+        path.CloseFigure();
+        return path;
+    }
+
+    private void SetStatus(string msg, bool error = false)
+    {
+        if (_lblStatus == null) return;
+        _lblStatus.Text = msg;
+        _lblStatus.ForeColor = error ? AppTheme.Danger : AppTheme.TextMuted;
     }
 
     private void Grid_CellFormatting(object? sender, DataGridViewCellFormattingEventArgs e)
@@ -235,75 +270,47 @@ public class InventoryListView : UserControl
         if (e.RowIndex < 0) return;
         if (_grid.Rows[e.RowIndex].DataBoundItem is not ProductRow row) return;
 
-        if (_grid.Columns[e.ColumnIndex].DataPropertyName == "QuantityOnHand")
+        var col = _grid.Columns[e.ColumnIndex].DataPropertyName;
+        if (col == "StockStatus")
         {
             if (row.IsLowStock)
             {
                 e.CellStyle.ForeColor = AppTheme.Danger;
                 e.CellStyle.Font = new Font("Segoe UI", 9, FontStyle.Bold);
             }
+            else
+            {
+                e.CellStyle.ForeColor = AppTheme.Success;
+            }
+        }
+        else if (col == "QuantityOnHand" && row.IsLowStock)
+        {
+            e.CellStyle.ForeColor = AppTheme.Warning;
+            e.CellStyle.Font = new Font("Segoe UI", 9.5f, FontStyle.Bold);
         }
     }
 
-    private void ApplyFilter()
-    {
-        var term = _txtSearch.Text.Trim().ToLower();
-        var filtered = string.IsNullOrWhiteSpace(term)
-            ? _allProducts
-            : _allProducts.Where(p =>
-                p.ProductCode.ToLower().Contains(term) ||
-                p.ProductName.ToLower().Contains(term)).ToList();
-
-        _grid.DataSource = null;
-        _grid.DataSource = filtered;
-    }
-
-    private void LoadSelectedIntoForm()
-    {
-        if (_grid.CurrentRow?.DataBoundItem is not ProductRow row) return;
-
-        _txtName.Text = row.ProductName;
-        _txtPrice.Text = row.UnitPrice.ToString("F2");
-        _txtReorder.Text = row.ReorderLevel.ToString("F2");
-        _txtInitialStock.Text = row.QuantityOnHand.ToString("F2");
-    }
-
-    private void ClearForm()
-{
-    _txtName.Clear();
-    _txtPrice.Clear();
-    _txtReorder.Text = "5";
-    _txtInitialStock.Text = "0";
-    SetStatus("");
-}
-
-    private void SetStatus(string message, bool isError = false)
-    {
-        _lblStatus.Text = message;
-        _lblStatus.ForeColor = isError ? AppTheme.Danger : AppTheme.Success;
-    }
-
-    private async Task LoadProductsAsync()
+    // ── Data ────────────────────────────────────────────────────────────
+    private async Task LoadProductsWithRetryAsync()
     {
         const int maxAttempts = 10;
-
         for (int attempt = 1; attempt <= maxAttempts; attempt++)
         {
             try
             {
-                SetStatus($"Connecting to API... (attempt {attempt}/{maxAttempts})");
-
+                SetStatus($"Loading inventory… ({attempt}/{maxAttempts})");
                 var list = await _http.GetFromJsonAsync<List<ProductRow>>(
                     $"tenant/{DefaultCompanyId}/products") ?? new();
 
                 _allProducts = list;
                 ApplyFilter();
-                SetStatus($"Loaded {list.Count} product(s).");
+                UpdateSummary();
+                SetStatus($"Loaded {_allProducts.Count} product(s).");
                 return;
             }
             catch (HttpRequestException) when (attempt < maxAttempts)
             {
-                SetStatus($"API not ready yet, retrying in 1.5s... ({attempt}/{maxAttempts})");
+                SetStatus($"API not ready, retrying… ({attempt}/{maxAttempts})");
                 await Task.Delay(1500);
             }
             catch (Exception ex)
@@ -312,85 +319,341 @@ public class InventoryListView : UserControl
                 return;
             }
         }
-
-        SetStatus($"Failed to load: API not reachable after {maxAttempts} attempts. Is the API running?", true);
+        SetStatus("API not reachable after 10 attempts.", true);
     }
 
-    private async Task CreateProductAsync()
+    private void UpdateSummary()
     {
-        if (string.IsNullOrWhiteSpace(_txtName.Text))
-        {
-            SetStatus("Product name is required.", true);
-            return;
-        }
-        if (!decimal.TryParse(_txtPrice.Text, out var price))
-        {
-            SetStatus("Invalid price.", true);
-            return;
-        }
-        decimal.TryParse(_txtReorder.Text, out var reorder);
-        decimal.TryParse(_txtInitialStock.Text, out var initialStock);
+        _lblTotalSku.Text = _allProducts.Count.ToString("N0");
+        var low = _allProducts.Count(p => p.IsLowStock);
+        _lblLowStock.Text = low.ToString("N0");
+        _lblLowStock.ForeColor = low > 0 ? AppTheme.Danger : AppTheme.Primary;
+        var value = _allProducts.Sum(p => p.UnitPrice * p.QuantityOnHand);
+        _lblTotalValue.Text = $"₱{value:N0}";
+    }
 
-        try
+    private void ApplyFilter()
+    {
+        var term = _txtSearch.Text.Trim().ToLowerInvariant();
+        var filtered = string.IsNullOrWhiteSpace(term)
+            ? _allProducts
+            : _allProducts.Where(p =>
+                p.ProductCode.ToLowerInvariant().Contains(term) ||
+                p.ProductName.ToLowerInvariant().Contains(term)).ToList();
+
+        _grid.DataSource = null;
+        _grid.DataSource = filtered;
+        _lblCount.Text = $"{filtered.Count} item(s)";
+        _selected = null;
+    }
+
+    // ── Add / Edit dialog ───────────────────────────────────────────────
+    private void OpenProductDialog(ProductRow? existing)
+    {
+        bool isEdit = existing != null;
+
+        using var dlg = new Form
         {
-            var payload = new
+            Text = isEdit ? "Edit Product" : "Add Product",
+            Size = new Size(460, isEdit ? 420 : 480),
+            StartPosition = FormStartPosition.CenterParent,
+            BackColor = AppTheme.CardBackground,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            MaximizeBox = false,
+            MinimizeBox = false,
+            ShowInTaskbar = false
+        };
+
+        int y = 24;
+        Label L(string t)
+        {
+            var lbl = new Label
             {
-                productName = _txtName.Text.Trim(),
-                unitPrice = price,
-                unitsPerBox = 1,
-                unitOfMeasure = "Piece",
-                initialStock,
-                reorderLevel = reorder
+                Text = t,
+                ForeColor = AppTheme.TextSecondary,
+                Font = new Font("Segoe UI", 9f, FontStyle.Bold),
+                Location = new Point(28, y),
+                AutoSize = true
             };
-
-            var resp = await _http.PostAsJsonAsync($"tenant/{DefaultCompanyId}/products", payload);
-            if (!resp.IsSuccessStatusCode)
+            dlg.Controls.Add(lbl);
+            y += 22;
+            return lbl;
+        }
+        TextBox T(string value, bool readOnly = false)
+        {
+            var tb = new TextBox
             {
-                SetStatus("Create failed: " + await resp.Content.ReadAsStringAsync(), true);
+                Location = new Point(28, y),
+                Width = 380,
+                Height = 32,
+                Font = AppTheme.FontBody,
+                BackColor = readOnly ? AppTheme.AppBackground : AppTheme.InputBg,
+                ForeColor = AppTheme.TextPrimary,
+                BorderStyle = BorderStyle.FixedSingle,
+                Text = value,
+                ReadOnly = readOnly
+            };
+            dlg.Controls.Add(tb);
+            y += 44;
+            return tb;
+        }
+
+        L(isEdit ? "Product code" : "Product name *");
+        var txtCodeOrName = T(isEdit ? existing!.ProductCode : "", readOnly: isEdit);
+
+        if (isEdit)
+        {
+            L("Product name *");
+            var txtName = T(existing!.ProductName);
+            L("Unit price (₱) *");
+            var txtPrice = T(existing.UnitPrice.ToString("0.##"));
+            L("Reorder level");
+            var txtReorder = T(existing.ReorderLevel.ToString("0.##"));
+            L("Unit of measure");
+            var txtUom = T(existing.UnitOfMeasure);
+
+            var btnSave = AppTheme.MakePrimaryButton("Save Changes", 380, 42);
+            btnSave.Location = new Point(28, y + 8);
+            btnSave.Click += async (s, e) =>
+            {
+                if (string.IsNullOrWhiteSpace(txtName.Text))
+                {
+                    MessageBox.Show("Product name is required.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                if (!decimal.TryParse(txtPrice.Text, out var price) || price < 0)
+                {
+                    MessageBox.Show("Enter a valid unit price.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                decimal.TryParse(txtReorder.Text, out var reorder);
+
+                try
+                {
+                    var payload = new
+                    {
+                        productCode = existing.ProductCode,
+                        productName = txtName.Text.Trim(),
+                        unitPrice = price,
+                        unitsPerBox = existing.UnitsPerBox,
+                        unitOfMeasure = string.IsNullOrWhiteSpace(txtUom.Text) ? "Piece" : txtUom.Text.Trim(),
+                        reorderLevel = reorder
+                    };
+                    var resp = await _http.PutAsJsonAsync($"tenant/{DefaultCompanyId}/products/{existing.ProductId}", payload);
+                    if (!resp.IsSuccessStatusCode)
+                    {
+                        MessageBox.Show("Update failed: " + await resp.Content.ReadAsStringAsync(), "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+                    SetStatus("✓ Product updated.");
+                    dlg.DialogResult = DialogResult.OK;
+                    dlg.Close();
+                    await LoadProductsWithRetryAsync();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            };
+            dlg.Controls.Add(btnSave);
+        }
+        else
+        {
+            // Add mode: name is first field already
+            L("Unit price (₱) *");
+            var txtPrice = T("");
+            L("Initial stock");
+            var txtStock = T("0");
+            L("Reorder level");
+            var txtReorder = T("5");
+            L("Unit of measure");
+            var txtUom = T("Piece");
+
+            var btnCreate = AppTheme.MakePrimaryButton("＋  Create Product", 380, 42);
+            btnCreate.Location = new Point(28, y + 8);
+            btnCreate.Click += async (s, e) =>
+            {
+                if (string.IsNullOrWhiteSpace(txtCodeOrName.Text))
+                {
+                    MessageBox.Show("Product name is required.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                if (!decimal.TryParse(txtPrice.Text, out var price) || price < 0)
+                {
+                    MessageBox.Show("Enter a valid unit price.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                decimal.TryParse(txtStock.Text, out var initial);
+                decimal.TryParse(txtReorder.Text, out var reorder);
+
+                try
+                {
+                    var payload = new
+                    {
+                        productName = txtCodeOrName.Text.Trim(),
+                        unitPrice = price,
+                        unitsPerBox = 1,
+                        unitOfMeasure = string.IsNullOrWhiteSpace(txtUom.Text) ? "Piece" : txtUom.Text.Trim(),
+                        initialStock = initial,
+                        reorderLevel = reorder
+                    };
+                    var resp = await _http.PostAsJsonAsync($"tenant/{DefaultCompanyId}/products", payload);
+                    if (!resp.IsSuccessStatusCode)
+                    {
+                        MessageBox.Show("Create failed: " + await resp.Content.ReadAsStringAsync(), "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+                    SetStatus("✓ Product added.");
+                    dlg.DialogResult = DialogResult.OK;
+                    dlg.Close();
+                    await LoadProductsWithRetryAsync();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            };
+            dlg.Controls.Add(btnCreate);
+        }
+
+        dlg.ShowDialog(FindForm());
+    }
+
+    // ── Adjust stock dialog ─────────────────────────────────────────────
+    private void OpenAdjustDialog(ProductRow row)
+    {
+        using var dlg = new Form
+        {
+            Text = "Adjust Stock",
+            Size = new Size(420, 340),
+            StartPosition = FormStartPosition.CenterParent,
+            BackColor = AppTheme.CardBackground,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            MaximizeBox = false,
+            MinimizeBox = false
+        };
+
+        dlg.Controls.Add(new Label
+        {
+            Text = $"{row.ProductCode}  ·  {row.ProductName}",
+            Font = AppTheme.FontHeading,
+            ForeColor = AppTheme.TextPrimary,
+            Location = new Point(24, 20),
+            AutoSize = true
+        });
+        dlg.Controls.Add(new Label
+        {
+            Text = $"Current on hand:  {row.QuantityOnHand:N2}",
+            ForeColor = AppTheme.TextSecondary,
+            Font = AppTheme.FontBody,
+            Location = new Point(24, 50),
+            AutoSize = true
+        });
+
+        dlg.Controls.Add(new Label
+        {
+            Text = "Quantity delta (+ receive / − issue)",
+            ForeColor = AppTheme.TextSecondary,
+            Font = new Font("Segoe UI", 9f, FontStyle.Bold),
+            Location = new Point(24, 90),
+            AutoSize = true
+        });
+        var txtDelta = new TextBox
+        {
+            Location = new Point(24, 114),
+            Width = 360,
+            Height = 32,
+            Font = AppTheme.FontBody,
+            BackColor = AppTheme.InputBg,
+            ForeColor = AppTheme.TextPrimary,
+            BorderStyle = BorderStyle.FixedSingle,
+            Text = "0"
+        };
+        dlg.Controls.Add(txtDelta);
+
+        dlg.Controls.Add(new Label
+        {
+            Text = "Reorder level",
+            ForeColor = AppTheme.TextSecondary,
+            Font = new Font("Segoe UI", 9f, FontStyle.Bold),
+            Location = new Point(24, 160),
+            AutoSize = true
+        });
+        var txtReorder = new TextBox
+        {
+            Location = new Point(24, 184),
+            Width = 360,
+            Height = 32,
+            Font = AppTheme.FontBody,
+            BackColor = AppTheme.InputBg,
+            ForeColor = AppTheme.TextPrimary,
+            BorderStyle = BorderStyle.FixedSingle,
+            Text = row.ReorderLevel.ToString("0.##")
+        };
+        dlg.Controls.Add(txtReorder);
+
+        var btnApply = AppTheme.MakePrimaryButton("Apply Adjustment", 360, 42);
+        btnApply.Location = new Point(24, 240);
+        btnApply.Click += async (s, e) =>
+        {
+            if (!decimal.TryParse(txtDelta.Text, out var delta))
+            {
+                MessageBox.Show("Enter a valid quantity delta.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
+            decimal.TryParse(txtReorder.Text, out var reorder);
 
-            SetStatus("✓ Product added.");
-            ClearForm();
-            await LoadProductsAsync();
-        }
-        catch (Exception ex)
-        {
-            SetStatus($"Error: {ex.Message}", true);
-        }
+            try
+            {
+                var payload = new { productId = row.ProductId, quantityDelta = delta, reorderLevel = reorder };
+                var resp = await _http.PostAsJsonAsync($"tenant/{DefaultCompanyId}/inventory/adjust", payload);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    MessageBox.Show("Adjust failed: " + await resp.Content.ReadAsStringAsync(), "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+                SetStatus("✓ Stock adjusted.");
+                dlg.DialogResult = DialogResult.OK;
+                dlg.Close();
+                await LoadProductsWithRetryAsync();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        };
+        dlg.Controls.Add(btnApply);
+        dlg.ShowDialog(FindForm());
     }
 
-    private async Task UpdateProductAsync()
+    // ── Archive (delete) ────────────────────────────────────────────────
+    private async Task ArchiveProductAsync()
     {
-        if (_grid.CurrentRow?.DataBoundItem is not ProductRow row)
+        if (_selected == null)
         {
             SetStatus("Select a product first.", true);
             return;
         }
-        if (!decimal.TryParse(_txtPrice.Text, out var price)) return;
-        decimal.TryParse(_txtReorder.Text, out var reorder);
+
+        var confirm = MessageBox.Show(
+            $"Archive \"{_selected.ProductName}\" ({_selected.ProductCode})?\n\nThis removes the product and its inventory record.",
+            "Archive Product",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning);
+
+        if (confirm != DialogResult.Yes) return;
 
         try
         {
-            var payload = new
-            {
-                productCode = row.ProductCode,  // preserve existing code
-                productName = _txtName.Text.Trim(),
-                unitPrice = price,
-                unitsPerBox = row.UnitsPerBox,
-                unitOfMeasure = row.UnitOfMeasure,
-                reorderLevel = reorder
-            };
-
-            var resp = await _http.PutAsJsonAsync($"tenant/{DefaultCompanyId}/products/{row.ProductId}", payload);
+            var resp = await _http.DeleteAsync($"tenant/{DefaultCompanyId}/products/{_selected.ProductId}");
             if (!resp.IsSuccessStatusCode)
             {
-                SetStatus("Update failed: " + await resp.Content.ReadAsStringAsync(), true);
+                SetStatus("Archive failed: " + await resp.Content.ReadAsStringAsync(), true);
                 return;
             }
-
-            SetStatus("✓ Product updated.");
-            await LoadProductsAsync();
+            SetStatus($"✓ Archived {_selected.ProductCode}.");
+            _selected = null;
+            await LoadProductsWithRetryAsync();
         }
         catch (Exception ex)
         {
@@ -398,81 +661,18 @@ public class InventoryListView : UserControl
         }
     }
 
-    private async Task DeleteProductAsync()
-    {
-        if (_grid.CurrentRow?.DataBoundItem is not ProductRow row) return;
-        if (MessageBox.Show($"Delete '{row.ProductName}'?", "Confirm",
-            MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
-
-        try
-        {
-            var resp = await _http.DeleteAsync($"tenant/{DefaultCompanyId}/products/{row.ProductId}");
-            if (!resp.IsSuccessStatusCode)
-            {
-                SetStatus("Delete failed.", true);
-                return;
-            }
-            SetStatus("✓ Product deleted.");
-            ClearForm();
-            await LoadProductsAsync();
-        }
-        catch (Exception ex)
-        {
-            SetStatus($"Error: {ex.Message}", true);
-        }
-    }
-
-    private async Task AdjustStockAsync()
-    {
-        if (_grid.CurrentRow?.DataBoundItem is not ProductRow row)
-        {
-            SetStatus("Select a product first.", true);
-            return;
-        }
-        if (!decimal.TryParse(_txtInitialStock.Text, out var newStock))
-        {
-            SetStatus("Enter target stock in 'Stock' field.", true);
-            return;
-        }
-        decimal.TryParse(_txtReorder.Text, out var reorder);
-
-        var delta = newStock - row.QuantityOnHand;
-
-        try
-        {
-            var payload = new
-            {
-                productId = row.ProductId,
-                quantityDelta = delta,
-                reorderLevel = reorder
-            };
-
-            var resp = await _http.PostAsJsonAsync($"tenant/{DefaultCompanyId}/inventory/adjust", payload);
-            if (!resp.IsSuccessStatusCode)
-            {
-                SetStatus("Adjust failed.", true);
-                return;
-            }
-            SetStatus($"✓ Stock adjusted by {delta:+0;-0;0}.");
-            await LoadProductsAsync();
-        }
-        catch (Exception ex)
-        {
-            SetStatus($"Error: {ex.Message}", true);
-        }
-    }
-
+    // ── DTO ─────────────────────────────────────────────────────────────
     public class ProductRow
     {
         public int ProductId { get; set; }
         public string ProductCode { get; set; } = "";
         public string ProductName { get; set; } = "";
         public decimal UnitPrice { get; set; }
-        public int UnitsPerBox { get; set; }
-        public string UnitOfMeasure { get; set; } = "";
+        public int UnitsPerBox { get; set; } = 1;
+        public string UnitOfMeasure { get; set; } = "Piece";
         public decimal QuantityOnHand { get; set; }
         public decimal ReorderLevel { get; set; }
         public bool IsLowStock { get; set; }
-        public string StockStatus => IsLowStock ? "⚠ Low" : "✓ OK";
+        public string StockStatus => IsLowStock ? "● Low stock" : "● In stock";
     }
 }
