@@ -6,6 +6,11 @@ public class Sale
     public string InvoiceNumber { get; set; } = string.Empty;
     public int? CashierId { get; set; }
     public string CashierName { get; set; } = string.Empty;
+
+    public decimal Subtotal { get; set; }
+    public string DiscountType { get; set; } = "None";
+    public decimal DiscountAmount { get; set; }
+
     public decimal TotalAmount { get; set; }
     public decimal AmountPaid { get; set; }
     public decimal ChangeDue { get; set; }
@@ -13,6 +18,5 @@ public class Sale
     public DateTime SaleDate { get; set; } = DateTime.UtcNow;
     public bool IsActive { get; set; } = true;
 
-    // Navigation
     public ICollection<SaleItem> SaleItems { get; set; } = new List<SaleItem>();
 }

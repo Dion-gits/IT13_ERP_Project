@@ -1,16 +1,38 @@
-namespace CoreErp.WinForms;
+using CoreErp.WinForms.Shell;
+using CoreErp.WinForms.Views.Inventory;
+using CoreErp.WinForms.Views.POS;
 
-static class Program
+namespace CoreErp.WinForms
 {
-    /// <summary>
-    ///  The main entry point for the application.
-    /// </summary>
-    [STAThread]
-    static void Main()
+    internal static class Program
     {
-        // To customize application configuration such as set high DPI settings or default font,
-        // see https://aka.ms/applicationconfiguration.
-        ApplicationConfiguration.Initialize();
-        Application.Run(new Form1());
-    }    
+        [STAThread]
+        static void Main()
+        {
+            ApplicationConfiguration.Initialize();
+
+            var navItems = new List<ErpShell.NavItem>
+            {
+                new()
+                {
+                    Key = "pos",
+                    Icon = "🛒",
+                    Label = "Point of Sale",
+                    ViewFactory = () => new PosView()
+                },
+                new()
+                {
+                    Key = "inventory",
+                    Icon = "📦",
+                    Label = "Inventory",
+                    ViewFactory = () => new InventoryListView()
+                },
+            };
+
+            Application.Run(new ErpShell(
+                roleName: "Cashier / Inventory",
+                userEmail: "staff@tenant1.com",
+                navItems: navItems));
+        }
+    }
 }
