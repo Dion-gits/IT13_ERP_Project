@@ -18,6 +18,66 @@ public sealed class SalesController : ControllerBase
         _factory = factory;
     }
 
+    [HttpGet]
+    public async Task<IActionResult> GetAll(
+    int companyId,
+    [FromQuery] string? search,
+    [FromQuery] string? payment,
+    [FromQuery] string? dateRange)
+    {
+        await using var db = await _factory.CreateAsync(companyId);
+
+        var query = db.Sales
+            .Include(s => s.SaleItems)
+            .AsNoTracking()
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            query = query.Where(s =>
+                s.InvoiceNumber.ToLower().Contains(term) ||
+                s.CashierName.ToLower().Contains(term));
+        }
+
+        if (!string.IsNullOrWhiteSpace(payment) && payment != "All")
+        {
+            query = query.Where(s => s.PaymentMethod == payment);
+        }
+
+        var now = DateTime.UtcNow;
+        query = dateRange switch
+        {
+            "Today" => query.Where(s => s.SaleDate.Date == now.Date),
+            "Week" => query.Where(s => s.SaleDate >= now.AddDays(-7)),
+            "Month" => query.Where(s => s.SaleDate >= now.AddDays(-30)),
+            "Year" => query.Where(s => s.SaleDate >= now.AddDays(-365)),
+            _ => query
+        };
+
+        var sales = await query
+            .OrderByDescending(s => s.SaleDate)
+            .Take(500)
+            .Select(s => new
+            {
+                s.SaleId,
+                s.InvoiceNumber,
+                s.CashierName,
+                s.PaymentMethod,
+                s.DiscountType,
+                s.Subtotal,
+                s.DiscountAmount,
+                s.TotalAmount,
+                s.AmountPaid,
+                s.ChangeDue,
+                s.SaleDate,
+                ItemCount = s.SaleItems.Count
+            })
+            .ToListAsync();
+
+        return Ok(sales);
+    }
+
     [HttpPost]
     public async Task<IActionResult> Create(int companyId, [FromBody] CreateSaleRequest req)
     {

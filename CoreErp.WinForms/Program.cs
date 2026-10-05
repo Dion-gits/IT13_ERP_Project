@@ -22,6 +22,13 @@ namespace CoreErp.WinForms
                 },
                 new()
                 {
+                    Key = "transactions",           // ← NEW
+                    Icon = "📜",                     // ← NEW
+                    Label = "Transaction History",  // ← NEW
+                    ViewFactory = () => new TransactionHistoryView()  // ← NEW
+                },
+                new()
+                {
                     Key = "inventory",
                     Icon = "📦",
                     Label = "Inventory",
