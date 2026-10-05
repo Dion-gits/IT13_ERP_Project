@@ -16,7 +16,7 @@
     <Folder Include="Views\Roles\HrManager\" />
     <Folder Include="Views\Roles\BranchManager\" />
     <Folder Include="Views\Roles\InventoryStaff\" />
-    <Folder Include="Views\Roles\Cashier\" />
+    <Folder Include="Views\Roles\Cashier\" />                                                      
     <Folder Include="Views\Roles\Shared\" />
     <Folder Include="Views\Roles\Owner\" />
     <Folder Include="Views\Roles\SuperAdmin\" />
