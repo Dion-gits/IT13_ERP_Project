@@ -58,6 +58,9 @@ public class TenantErpDbContext : DbContext
             entity.Property(x => x.DiscountType).HasMaxLength(20);
             entity.Property(x => x.Subtotal).HasPrecision(18, 2);
             entity.Property(x => x.DiscountAmount).HasPrecision(18, 2);
+            entity.Property(x => x.VatableSales).HasPrecision(18, 2);
+            entity.Property(x => x.VatAmount).HasPrecision(18, 2);
+            entity.Property(x => x.VatExemptSales).HasPrecision(18, 2);
             entity.Property(x => x.TotalAmount).HasPrecision(18, 2);
             entity.Property(x => x.AmountPaid).HasPrecision(18, 2);
             entity.Property(x => x.ChangeDue).HasPrecision(18, 2);

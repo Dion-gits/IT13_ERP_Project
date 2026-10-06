@@ -112,6 +112,10 @@ public sealed class SalesController : ControllerBase
                 if (!products.ContainsKey(item.ProductId))
                     return BadRequest(new { message = $"Product {item.ProductId} not found." });
 
+                // Archived products can't be sold
+                if (!products[item.ProductId].IsActive)
+                    return BadRequest(new { message = $"{products[item.ProductId].ProductName} is archived and can't be sold." });
+
                 var inventory = inventories.GetValueOrDefault(item.ProductId);
                 var available = inventory?.QuantityOnHand ?? 0;
 

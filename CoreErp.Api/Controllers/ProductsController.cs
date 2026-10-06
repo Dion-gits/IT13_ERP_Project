@@ -17,13 +17,15 @@ public sealed class ProductsController : ControllerBase
         _factory = factory;
     }
 
+    // Archived products are hidden unless ?includeArchived=true (POS never asks for them).
     [HttpGet]
-    public async Task<IActionResult> GetAll(int companyId)
+    public async Task<IActionResult> GetAll(int companyId, [FromQuery] bool includeArchived = false)
     {
         await using var db = await _factory.CreateAsync(companyId);
 
         var products = await db.Products
             .AsNoTracking()
+            .Where(p => includeArchived || p.IsActive)
             .OrderBy(p => p.ProductName)
             .Select(p => new ProductWithStockDto
             {
@@ -33,6 +35,7 @@ public sealed class ProductsController : ControllerBase
                 UnitPrice = p.UnitPrice,
                 UnitsPerBox = p.UnitsPerBox,
                 UnitOfMeasure = p.UnitOfMeasure,
+                IsActive = p.IsActive,
                 QuantityOnHand = db.Inventories.Where(i => i.ProductId == p.ProductId).Select(i => i.QuantityOnHand).FirstOrDefault(),
                 ReorderLevel = db.Inventories.Where(i => i.ProductId == p.ProductId).Select(i => i.ReorderLevel).FirstOrDefault(),
                 IsLowStock = db.Inventories.Where(i => i.ProductId == p.ProductId).Select(i => i.QuantityOnHand <= i.ReorderLevel).FirstOrDefault()
@@ -130,6 +133,26 @@ public sealed class ProductsController : ControllerBase
         return Ok();
     }
 
+    // Archive = soft delete. The product (and its sales history) stays, but it's hidden from POS.
+    [HttpPost("{productId:int}/archive")]
+    public Task<IActionResult> Archive(int companyId, int productId) => SetActive(companyId, productId, false);
+
+    [HttpPost("{productId:int}/restore")]
+    public Task<IActionResult> Restore(int companyId, int productId) => SetActive(companyId, productId, true);
+
+    private async Task<IActionResult> SetActive(int companyId, int productId, bool isActive)
+    {
+        await using var db = await _factory.CreateAsync(companyId);
+
+        var product = await db.Products.FindAsync(productId);
+        if (product == null) return NotFound(new { message = "Product not found." });
+
+        product.IsActive = isActive;
+        await db.SaveChangesAsync();
+        return Ok();
+    }
+
+    // Hard delete is kept for the API, but the app now archives instead.
     [HttpDelete("{productId:int}")]
     public async Task<IActionResult> Delete(int companyId, int productId)
     {

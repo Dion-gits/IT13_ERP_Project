@@ -11,6 +11,11 @@ public class Sale
     public string DiscountType { get; set; } = "None";
     public decimal DiscountAmount { get; set; }
 
+    // VAT breakdown (prices are VAT-inclusive)
+    public decimal VatableSales { get; set; }
+    public decimal VatAmount { get; set; }
+    public decimal VatExemptSales { get; set; }
+
     public decimal TotalAmount { get; set; }
     public decimal AmountPaid { get; set; }
     public decimal ChangeDue { get; set; }

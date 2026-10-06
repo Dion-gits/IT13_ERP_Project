@@ -24,6 +24,9 @@ public class SaleReceiptDto
     public string DiscountType { get; set; } = "";
     public decimal Subtotal { get; set; }
     public decimal DiscountAmount { get; set; }
+    public decimal VatableSales { get; set; }
+    public decimal VatAmount { get; set; }
+    public decimal VatExemptSales { get; set; }
     public decimal TotalAmount { get; set; }
     public decimal AmountPaid { get; set; }
     public decimal ChangeDue { get; set; }

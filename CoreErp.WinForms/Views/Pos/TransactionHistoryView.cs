@@ -461,7 +461,7 @@ public class TransactionHistoryView : UserControl
         using var dlg = new Form
         {
             Text = $"Transaction {t.InvoiceNumber}",
-            Size = new Size(480, 420),
+            Size = new Size(480, 460),
             StartPosition = FormStartPosition.CenterParent,
             BackColor = AppTheme.CardBackground,
             FormBorderStyle = FormBorderStyle.FixedDialog,
@@ -486,6 +486,7 @@ public class TransactionHistoryView : UserControl
             ("Items",       t.ItemCount.ToString()),
             ("Subtotal",    $"₱{t.Subtotal:N2}"),
             ("Discount",    t.DiscountAmount > 0 ? $"₱{t.DiscountAmount:N2} ({t.DiscountType})" : "None"),
+            ("VAT (12%)",   t.VatExemptSales > 0 ? "Exempt" : $"₱{t.VatAmount:N2}"),
             ("Total",       $"₱{t.TotalAmount:N2}"),
             ("Amount Paid", $"₱{t.AmountPaid:N2}"),
             ("Change",      $"₱{t.ChangeDue:N2}"),
@@ -519,7 +520,7 @@ public class TransactionHistoryView : UserControl
         var btnClose = new Button
         {
             Text = "Close",
-            Location = new Point(24, 340),
+            Location = new Point(24, 372),
             Size = new Size(426, 40),
             BackColor = AppTheme.Primary,
             ForeColor = Color.White,
@@ -545,6 +546,8 @@ public class TransactionHistoryView : UserControl
         public string DiscountType { get; set; } = "";
         public decimal Subtotal { get; set; }
         public decimal DiscountAmount { get; set; }
+        public decimal VatAmount { get; set; }
+        public decimal VatExemptSales { get; set; }
         public decimal TotalAmount { get; set; }
         public decimal AmountPaid { get; set; }
         public decimal ChangeDue { get; set; }

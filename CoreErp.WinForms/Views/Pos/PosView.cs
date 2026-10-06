@@ -12,6 +12,7 @@ public class PosView : UserControl
     private DataGridView _cartGrid = null!;
     private TextBox _txtSearch = null!;
     private Label _lblSubtotal = null!;
+    private Label _lblVat = null!;
     private Label _lblDiscount = null!;
     private Label _lblTotal = null!;
     private Label _lblChange = null!;
@@ -30,6 +31,7 @@ public class PosView : UserControl
     private string _paymentMethod = "Cash";
 
     private const decimal SENIOR_PWD_RATE = 0.20m;
+    private const decimal VAT_RATE = 0.12m;     // item prices are VAT-inclusive
 
     public PosView()
     {
@@ -195,7 +197,7 @@ public class PosView : UserControl
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 10,
+            RowCount = 11,
             BackColor = AppTheme.CardBackground,
             Padding = new Padding(20)
         };
@@ -204,11 +206,12 @@ public class PosView : UserControl
         rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));   // 2 hint + remove
         rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));   // 3 discount
         rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));   // 4 subtotal
-        rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));   // 5 discount amount
-        rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));   // 6 total
-        rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));   // 7 payment toggles
-        rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));   // 8 amount paid + change
-        rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));   // 9 place order
+        rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));   // 5 VAT
+        rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));   // 6 discount amount
+        rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));   // 7 total
+        rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));   // 8 payment toggles
+        rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));   // 9 amount paid + change
+        rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));   // 10 place order
 
         // 0 — Title
         rightLayout.Controls.Add(new Label
@@ -372,7 +375,7 @@ public class PosView : UserControl
         // 4 — Subtotal
         _lblSubtotal = new Label
         {
-            Text = "Subtotal:  ₱0.00",
+            Text = "Subtotal (VAT incl.):  ₱0.00",
             ForeColor = AppTheme.TextSecondary,
             Font = AppTheme.FontBody,
             Dock = DockStyle.Fill,
@@ -380,7 +383,18 @@ public class PosView : UserControl
         };
         rightLayout.Controls.Add(_lblSubtotal, 0, 4);
 
-        // 5 — Discount amount
+        // 5 — VAT
+        _lblVat = new Label
+        {
+            Text = "VAT (12% incl.):  ₱0.00",
+            ForeColor = AppTheme.TextSecondary,
+            Font = AppTheme.FontBody,
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleRight
+        };
+        rightLayout.Controls.Add(_lblVat, 0, 5);
+
+        // 6 — Discount amount
         _lblDiscount = new Label
         {
             Text = "Discount:  ₱0.00",
@@ -389,9 +403,9 @@ public class PosView : UserControl
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleRight
         };
-        rightLayout.Controls.Add(_lblDiscount, 0, 5);
+        rightLayout.Controls.Add(_lblDiscount, 0, 6);
 
-        // 6 — Total
+        // 7 — Total
         _lblTotal = new Label
         {
             Text = "₱0.00",
@@ -400,9 +414,9 @@ public class PosView : UserControl
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleRight
         };
-        rightLayout.Controls.Add(_lblTotal, 0, 6);
+        rightLayout.Controls.Add(_lblTotal, 0, 7);
 
-        // 7 — Payment toggles
+        // 8 — Payment toggles
         var pnlPayment = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -415,9 +429,9 @@ public class PosView : UserControl
         _btnCash.Click += (s, e) => SetPayment("Cash");
         _btnGcash.Click += (s, e) => SetPayment("GCash");
         pnlPayment.Controls.AddRange(new Control[] { _btnCash, _btnGcash });
-        rightLayout.Controls.Add(pnlPayment, 0, 7);
+        rightLayout.Controls.Add(pnlPayment, 0, 8);
 
-        // 8 — Amount paid + change
+        // 9 — Amount paid + change
         var pnlPay = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -469,9 +483,9 @@ public class PosView : UserControl
         };
         pnlPay.Controls.Add(_lblChange, 1, 1);
 
-        rightLayout.Controls.Add(pnlPay, 0, 8);
+        rightLayout.Controls.Add(pnlPay, 0, 9);
 
-        // 9 — Place Order
+        // 10 — Place Order
         _btnPlaceOrder = new Button
         {
             Text = "✓   PLACE ORDER",
@@ -484,7 +498,7 @@ public class PosView : UserControl
         };
         _btnPlaceOrder.FlatAppearance.BorderSize = 0;
         _btnPlaceOrder.Click += async (s, e) => await PlaceOrderAsync();
-        rightLayout.Controls.Add(_btnPlaceOrder, 0, 9);
+        rightLayout.Controls.Add(_btnPlaceOrder, 0, 10);
 
         // Assemble
         mainLayout.Controls.Add(leftLayout, 0, 0);
@@ -673,22 +687,39 @@ public class PosView : UserControl
         RecomputeTotals();
     }
 
+    private readonly record struct Totals(decimal Subtotal, decimal Vat, decimal VatRemoved, decimal Discount, decimal Total, bool VatExempt);
+
+    // Prices are VAT-inclusive. Senior/PWD: VAT is removed first, then 20% off the VAT-exclusive amount.
+    private Totals CalcTotals()
+    {
+        decimal subtotal = _cart.Sum(c => c.Quantity * c.UnitPrice);
+
+        if (_discountType is "Senior" or "PWD")
+        {
+            decimal net = Math.Round(subtotal / (1 + VAT_RATE), 2);
+            decimal discount = Math.Round(net * SENIOR_PWD_RATE, 2);
+            return new Totals(subtotal, 0m, subtotal - net, discount, net - discount, true);
+        }
+
+        decimal vatable = Math.Round(subtotal / (1 + VAT_RATE), 2);
+        return new Totals(subtotal, subtotal - vatable, 0m, 0m, subtotal, false);
+    }
+
     private void RecomputeTotals()
     {
-        if (_lblSubtotal == null || _lblDiscount == null || _lblTotal == null || _lblChange == null)
+        if (_lblSubtotal == null || _lblVat == null || _lblDiscount == null || _lblTotal == null || _lblChange == null)
             return;
 
-        decimal subtotal = _cart.Sum(c => c.Quantity * c.UnitPrice);
-        decimal discount = _discountType switch
-        {
-            "Senior" => Math.Round(subtotal * SENIOR_PWD_RATE, 2),
-            "PWD" => Math.Round(subtotal * SENIOR_PWD_RATE, 2),
-            _ => 0m
-        };
-        decimal total = subtotal - discount;
+        var calc = CalcTotals();
+        decimal subtotal = calc.Subtotal;
+        decimal discount = calc.Discount;
+        decimal total = calc.Total;
 
-        _lblSubtotal.Text = $"Subtotal:  ₱{subtotal:N2}";
-        _lblDiscount.Text = $"Discount:  ₱{discount:N2}";
+        _lblSubtotal.Text = $"Subtotal (VAT incl.):  ₱{subtotal:N2}";
+        _lblVat.Text = calc.VatExempt
+            ? $"Less VAT (exempt):  -₱{calc.VatRemoved:N2}"
+            : $"VAT (12% incl.):  ₱{calc.Vat:N2}";
+        _lblDiscount.Text = discount > 0 ? $"Discount (20%):  -₱{discount:N2}" : "Discount:  ₱0.00";
         _lblTotal.Text = $"₱{total:N2}";
 
         if (_paymentMethod == "GCash")
@@ -721,14 +752,10 @@ public class PosView : UserControl
             return;
         }
 
-        decimal subtotal = _cart.Sum(c => c.Quantity * c.UnitPrice);
-        decimal discount = _discountType switch
-        {
-            "Senior" => Math.Round(subtotal * SENIOR_PWD_RATE, 2),
-            "PWD" => Math.Round(subtotal * SENIOR_PWD_RATE, 2),
-            _ => 0m
-        };
-        decimal total = subtotal - discount;
+        var calc = CalcTotals();
+        decimal subtotal = calc.Subtotal;
+        decimal discount = calc.Discount;
+        decimal total = calc.Total;
 
         decimal amountPaid = total;
         if (_paymentMethod == "Cash")
@@ -835,6 +862,8 @@ public class PosView : UserControl
 
         rtb.AppendText($"--------------------------------\n");
         rtb.AppendText(string.Format("{0,-20} {1,10:N2}\n", "Subtotal", r.Subtotal));
+        if (r.VatExemptSales > 0)
+            rtb.AppendText(string.Format("{0,-20} {1,10:N2}\n", "Less: VAT (12%)", -(r.Subtotal - r.VatExemptSales)));
         if (r.DiscountAmount > 0)
             rtb.AppendText(string.Format("{0,-20} {1,10:N2}\n", $"Discount ({r.DiscountType})", -r.DiscountAmount));
         rtb.AppendText(string.Format("{0,-20} {1,10:N2}\n", "TOTAL", r.TotalAmount));
@@ -844,6 +873,11 @@ public class PosView : UserControl
             rtb.AppendText(string.Format("{0,-20} {1,10:N2}\n", "Cash", r.AmountPaid));
             rtb.AppendText(string.Format("{0,-20} {1,10:N2}\n", "Change", r.ChangeDue));
         }
+
+        rtb.AppendText($"--------------------------------\n");
+        rtb.AppendText(string.Format("{0,-20} {1,10:N2}\n", "VATable Sales", r.VatableSales));
+        rtb.AppendText(string.Format("{0,-20} {1,10:N2}\n", "VAT (12%)", r.VatAmount));
+        rtb.AppendText(string.Format("{0,-20} {1,10:N2}\n", "VAT-Exempt Sales", r.VatExemptSales));
 
         rtb.AppendText($"================================\n\n");
         rtb.AppendText($"     Thank you for your purchase!\n");
@@ -896,6 +930,9 @@ public class PosView : UserControl
         public string DiscountType { get; set; } = "";
         public decimal Subtotal { get; set; }
         public decimal DiscountAmount { get; set; }
+        public decimal VatableSales { get; set; }
+        public decimal VatAmount { get; set; }
+        public decimal VatExemptSales { get; set; }
         public decimal TotalAmount { get; set; }
         public decimal AmountPaid { get; set; }
         public decimal ChangeDue { get; set; }
