@@ -65,6 +65,9 @@ public class TenantErpDbContext : DbContext
             entity.Property(x => x.AmountPaid).HasPrecision(18, 2);
             entity.Property(x => x.ChangeDue).HasPrecision(18, 2);
             entity.HasIndex(x => x.InvoiceNumber).IsUnique();
+            entity.Property(x => x.CustomerName).HasMaxLength(200);
+            entity.Property(x => x.CustomerIdNumber).HasMaxLength(50);
+            entity.Property(x => x.PaymentReference).HasMaxLength(100);
         });
 
         builder.Entity<SaleItem>(entity =>

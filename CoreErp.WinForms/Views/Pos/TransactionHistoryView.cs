@@ -1,4 +1,5 @@
 ﻿using CoreErp.WinForms.Theme;
+using System.ComponentModel;
 using System.Drawing.Drawing2D;
 using System.Net.Http.Json;
 
@@ -12,17 +13,18 @@ public class TransactionHistoryView : UserControl
     private TextBox _txtSearch = null!;
     private ComboBox _cbPayment = null!;
     private ComboBox _cbDateRange = null!;
-    private DataGridView _grid = null!;
+    private FlowLayoutPanel _list = null!;
     private Label _lblStatus = null!;
     private Label _lblResultCount = null!;
 
-    // Summary card labels
     private Label _lblTodayCount = null!;
     private Label _lblTodayRevenue = null!;
     private Label _lblTotalCount = null!;
     private Label _lblTotalRevenue = null!;
 
     private List<TransactionRow> _allTransactions = new();
+    private readonly List<TransactionItem> _items = new();
+    private Label? _emptyLabel;
 
     public TransactionHistoryView()
     {
@@ -32,11 +34,12 @@ public class TransactionHistoryView : UserControl
         _ = LoadTransactionsWithRetryAsync();
     }
 
+    // ═══════════════════════════════════════════════════════════
+    // UI
+    // ═══════════════════════════════════════════════════════════
     private void BuildUI()
     {
-        // ═══════════════════════════════════════════════════════════
-        // HEADER
-        // ═══════════════════════════════════════════════════════════
+        // ── Header ──
         var pnlHeader = new Panel
         {
             Dock = DockStyle.Top,
@@ -60,9 +63,7 @@ public class TransactionHistoryView : UserControl
             AutoSize = true
         });
 
-        // ═══════════════════════════════════════════════════════════
-        // LAYOUT (stats → filters → grid)
-        // ═══════════════════════════════════════════════════════════
+        // ── Layout ──
         var layout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -70,13 +71,11 @@ public class TransactionHistoryView : UserControl
             RowCount = 3,
             BackColor = AppTheme.AppBackground
         };
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 100));   // cards
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));    // cards
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));    // filters
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));    // grid
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));    // list card
 
-        // ═══════════════════════════════════════════════════════════
-        // SUMMARY CARDS
-        // ═══════════════════════════════════════════════════════════
+        // ── Stat cards ──
         var pnlCards = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -85,15 +84,12 @@ public class TransactionHistoryView : UserControl
             BackColor = AppTheme.AppBackground,
             Padding = new Padding(0, 8, 0, 8)
         };
-
         pnlCards.Controls.Add(CreateStatCard("Today's Transactions", out _lblTodayCount));
         pnlCards.Controls.Add(CreateStatCard("Today's Revenue", out _lblTodayRevenue));
         pnlCards.Controls.Add(CreateStatCard("Total Transactions", out _lblTotalCount));
         pnlCards.Controls.Add(CreateStatCard("Total Revenue", out _lblTotalRevenue));
 
-        // ═══════════════════════════════════════════════════════════
-        // FILTERS
-        // ═══════════════════════════════════════════════════════════
+        // ── Filters ──
         var pnlFilters = new Panel
         {
             Dock = DockStyle.Fill,
@@ -111,9 +107,10 @@ public class TransactionHistoryView : UserControl
             BorderStyle = BorderStyle.FixedSingle,
             PlaceholderText = "🔍  Search by invoice # or cashier..."
         };
+        _txtSearch.TextChanged += (s, e) => RebuildList();
         _txtSearch.KeyDown += (s, e) =>
         {
-            if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; ApplyFilter(); }
+            if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; RebuildList(); }
         };
 
         _cbPayment = new ComboBox
@@ -128,6 +125,7 @@ public class TransactionHistoryView : UserControl
         };
         _cbPayment.Items.AddRange(new object[] { "All Payments", "Cash", "GCash" });
         _cbPayment.SelectedIndex = 0;
+        _cbPayment.SelectedIndexChanged += (s, e) => RebuildList();
 
         _cbDateRange = new ComboBox
         {
@@ -141,25 +139,12 @@ public class TransactionHistoryView : UserControl
         };
         _cbDateRange.Items.AddRange(new object[] { "All Time", "Today", "This Week", "This Month", "This Year" });
         _cbDateRange.SelectedIndex = 0;
-
-        var btnFilter = new Button
-        {
-            Text = "Filter",
-            Location = new Point(630, 11),
-            Size = new Size(90, 36),
-            BackColor = AppTheme.Primary,
-            ForeColor = Color.White,
-            Font = AppTheme.FontButton,
-            FlatStyle = FlatStyle.Flat,
-            Cursor = Cursors.Hand
-        };
-        btnFilter.FlatAppearance.BorderSize = 0;
-        btnFilter.Click += (s, e) => ApplyFilter();
+        _cbDateRange.SelectedIndexChanged += (s, e) => RebuildList();
 
         var btnReset = new Button
         {
             Text = "Reset",
-            Location = new Point(728, 11),
+            Location = new Point(630, 11),
             Size = new Size(90, 36),
             BackColor = AppTheme.CardBackground,
             ForeColor = AppTheme.TextSecondary,
@@ -173,13 +158,13 @@ public class TransactionHistoryView : UserControl
             _txtSearch.Clear();
             _cbPayment.SelectedIndex = 0;
             _cbDateRange.SelectedIndex = 0;
-            ApplyFilter();
+            RebuildList();
         };
 
         var btnRefresh = new Button
         {
             Text = "↻  Refresh",
-            Location = new Point(826, 11),
+            Location = new Point(728, 11),
             Size = new Size(110, 36),
             BackColor = AppTheme.CardBackground,
             ForeColor = AppTheme.TextPrimary,
@@ -201,48 +186,37 @@ public class TransactionHistoryView : UserControl
         };
         pnlFilters.Controls.AddRange(new Control[]
         {
-            _txtSearch, _cbPayment, _cbDateRange, btnFilter, btnReset, btnRefresh, _lblResultCount
+            _txtSearch, _cbPayment, _cbDateRange, btnReset, btnRefresh, _lblResultCount
         });
         pnlFilters.Resize += (s, e) => _lblResultCount.Location = new Point(pnlFilters.Width - 90, 22);
 
-        // ═══════════════════════════════════════════════════════════
-        // GRID
-        // ═══════════════════════════════════════════════════════════
-        _grid = new DataGridView
+        // ── List card (header + scrollable rows) ──
+        var card = new Panel
         {
             Dock = DockStyle.Fill,
-            ReadOnly = true,
-            AllowUserToAddRows = false,
-            AutoGenerateColumns = false,
-            AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
-            BackgroundColor = AppTheme.CardBackground,
-            ForeColor = AppTheme.TextPrimary,
-            GridColor = AppTheme.BorderLight,
-            BorderStyle = BorderStyle.FixedSingle,
-            SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-            MultiSelect = false,
-            RowHeadersVisible = false,
-            EnableHeadersVisualStyles = false,
-            RowTemplate = { Height = 40 }
+            BackColor = AppTheme.CardBackground,
+            Padding = new Padding(1)
         };
-        StyleGrid(_grid);
+        card.Paint += (s, e) =>
+        {
+            using var pen = new Pen(AppTheme.Border, 1);
+            e.Graphics.DrawRectangle(pen, 0, 0, card.Width - 1, card.Height - 1);
+        };
 
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Invoice #", DataPropertyName = "InvoiceNumber", FillWeight = 14 });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Date", DataPropertyName = "SaleDate", FillWeight = 15, DefaultCellStyle = { Format = "MMM dd, yyyy hh:mm tt" } });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Cashier", DataPropertyName = "CashierName", FillWeight = 14 });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Items", DataPropertyName = "ItemCount", FillWeight = 7, DefaultCellStyle = { Alignment = DataGridViewContentAlignment.MiddleCenter } });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Subtotal", DataPropertyName = "Subtotal", FillWeight = 11, DefaultCellStyle = { Format = "C2", Alignment = DataGridViewContentAlignment.MiddleRight } });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Discount", DataPropertyName = "DiscountAmount", FillWeight = 11, DefaultCellStyle = { Format = "C2", Alignment = DataGridViewContentAlignment.MiddleRight } });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Total", DataPropertyName = "TotalAmount", FillWeight = 12, DefaultCellStyle = { Format = "C2", Alignment = DataGridViewContentAlignment.MiddleRight, Font = new Font("Segoe UI", 9.5f, FontStyle.Bold) } });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Payment", DataPropertyName = "PaymentMethod", FillWeight = 10, DefaultCellStyle = { Alignment = DataGridViewContentAlignment.MiddleCenter } });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Status", DataPropertyName = "StatusLabel", FillWeight = 8, DefaultCellStyle = { Alignment = DataGridViewContentAlignment.MiddleCenter } });
+        _list = new BufferedFlow
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.TopDown,
+            WrapContents = false,
+            AutoScroll = true,
+            BackColor = AppTheme.CardBackground
+        };
+        _list.ClientSizeChanged += (s, e) => FitWidths();
 
-        _grid.CellFormatting += Grid_CellFormatting;
-        _grid.CellDoubleClick += (s, e) => ShowDetails();
+        card.Controls.Add(_list);                               // Fill first
+        card.Controls.Add(new GridHeader { Dock = DockStyle.Top }); // then Top
 
-        // ═══════════════════════════════════════════════════════════
-        // STATUS BAR
-        // ═══════════════════════════════════════════════════════════
+        // ── Status ──
         _lblStatus = new Label
         {
             Text = "Ready.",
@@ -257,7 +231,7 @@ public class TransactionHistoryView : UserControl
         // Assemble
         layout.Controls.Add(pnlCards, 0, 0);
         layout.Controls.Add(pnlFilters, 0, 1);
-        layout.Controls.Add(_grid, 0, 2);
+        layout.Controls.Add(card, 0, 2);
 
         Controls.Add(layout);
         Controls.Add(_lblStatus);
@@ -270,7 +244,7 @@ public class TransactionHistoryView : UserControl
         var card = new Panel
         {
             Width = 280,
-            Height = 76,
+            Height = 72,
             BackColor = AppTheme.CardBackground,
             Margin = new Padding(0, 0, 14, 0)
         };
@@ -301,7 +275,6 @@ public class TransactionHistoryView : UserControl
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleLeft
         };
-
         valueLabel = new Label
         {
             Text = "0",
@@ -329,19 +302,6 @@ public class TransactionHistoryView : UserControl
         return path;
     }
 
-    private static void StyleGrid(DataGridView g)
-    {
-        g.ColumnHeadersDefaultCellStyle.BackColor = AppTheme.AppBackground;
-        g.ColumnHeadersDefaultCellStyle.ForeColor = AppTheme.TextSecondary;
-        g.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 8.5f, FontStyle.Bold);
-        g.ColumnHeadersHeight = 42;
-        g.DefaultCellStyle.BackColor = AppTheme.CardBackground;
-        g.DefaultCellStyle.ForeColor = AppTheme.TextPrimary;
-        g.DefaultCellStyle.SelectionBackColor = AppTheme.SidebarActive;
-        g.DefaultCellStyle.SelectionForeColor = AppTheme.Primary;
-        g.DefaultCellStyle.Padding = new Padding(6, 0, 0, 0);
-    }
-
     private void SetStatus(string msg, bool error = false)
     {
         if (_lblStatus == null) return;
@@ -349,30 +309,111 @@ public class TransactionHistoryView : UserControl
         _lblStatus.ForeColor = error ? AppTheme.Danger : AppTheme.TextMuted;
     }
 
-    private void Grid_CellFormatting(object? sender, DataGridViewCellFormattingEventArgs e)
+    // ═══════════════════════════════════════════════════════════
+    // List building
+    // ═══════════════════════════════════════════════════════════
+    private void RebuildList()
     {
-        if (e.RowIndex < 0) return;
-        if (_grid.Rows[e.RowIndex].DataBoundItem is not TransactionRow row) return;
+        var term = _txtSearch.Text.Trim().ToLower();
+        var payment = _cbPayment.SelectedItem?.ToString() ?? "All Payments";
+        var range = _cbDateRange.SelectedItem?.ToString() ?? "All Time";
 
-        var col = _grid.Columns[e.ColumnIndex].DataPropertyName;
+        var query = _allTransactions.AsEnumerable();
 
-        if (col == "StatusLabel")
+        if (!string.IsNullOrWhiteSpace(term))
         {
-            e.CellStyle.ForeColor = AppTheme.Success;
-            e.CellStyle.Font = new Font("Segoe UI", 9, FontStyle.Bold);
+            query = query.Where(t =>
+                t.InvoiceNumber.ToLower().Contains(term) ||
+                t.CashierName.ToLower().Contains(term));
         }
-        else if (col == "DiscountAmount" && row.DiscountAmount > 0)
+
+        if (payment != "All Payments")
+            query = query.Where(t => t.PaymentMethod == payment);
+
+        var now = DateTime.UtcNow;
+        query = range switch
         {
-            e.CellStyle.ForeColor = AppTheme.Danger;
-        }
-        else if (col == "PaymentMethod")
+            "Today" => query.Where(t => t.SaleDate.Date == now.Date),
+            "This Week" => query.Where(t => t.SaleDate >= now.AddDays(-7)),
+            "This Month" => query.Where(t => t.SaleDate >= now.AddDays(-30)),
+            "This Year" => query.Where(t => t.SaleDate >= now.AddDays(-365)),
+            _ => query
+        };
+
+        var rows = query.OrderByDescending(t => t.SaleDate).ToList();
+
+        _list.SuspendLayout();
+
+        foreach (var old in _items)
         {
-            e.CellStyle.ForeColor = row.PaymentMethod == "Cash" ? AppTheme.Success : AppTheme.Primary;
-            e.CellStyle.Font = new Font("Segoe UI", 9, FontStyle.Bold);
+            _list.Controls.Remove(old);
+            old.Dispose();
         }
+        _items.Clear();
+
+        if (_emptyLabel != null)
+        {
+            _list.Controls.Remove(_emptyLabel);
+            _emptyLabel.Dispose();
+            _emptyLabel = null;
+        }
+
+        foreach (var row in rows)
+        {
+            var item = new TransactionItem(row);
+            item.ToggleRequested += (s, e) => ToggleItem(item);
+            _items.Add(item);
+            _list.Controls.Add(item);
+        }
+
+        if (rows.Count == 0)
+        {
+            _emptyLabel = new Label
+            {
+                Text = _allTransactions.Count == 0
+                    ? "No transactions yet."
+                    : "No transactions match your filters.",
+                ForeColor = AppTheme.TextMuted,
+                Font = AppTheme.FontBody,
+                Height = 90,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Margin = Padding.Empty
+            };
+            _list.Controls.Add(_emptyLabel);
+        }
+
+        FitWidths();
+        _list.ResumeLayout(true);
+        _lblResultCount.Text = $"{rows.Count} result(s)";
     }
 
-    // ─── Data loading ───
+    private bool _fitting;
+    private void FitWidths()
+    {
+        if (_fitting || _list == null) return;
+        _fitting = true;
+        try
+        {
+            int w = _list.ClientSize.Width;
+            foreach (Control c in _list.Controls)
+                if (c.Width != w) c.Width = w;
+        }
+        finally { _fitting = false; }
+    }
+
+    private void ToggleItem(TransactionItem item)
+    {
+        bool open = !item.Expanded;
+        foreach (var other in _items)
+            if (other != item) other.SetExpanded(false);
+
+        item.SetExpanded(open);
+        if (open) _list.ScrollControlIntoView(item);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // API
+    // ═══════════════════════════════════════════════════════════
     private async Task LoadTransactionsWithRetryAsync()
     {
         const int maxAttempts = 10;
@@ -385,7 +426,7 @@ public class TransactionHistoryView : UserControl
                     $"tenant/{DefaultCompanyId}/sales") ?? new();
 
                 _allTransactions = list;
-                ApplyFilter();
+                RebuildList();
                 UpdateSummaryCards();
                 SetStatus($"Loaded {list.Count} transaction(s).");
                 return;
@@ -415,128 +456,425 @@ public class TransactionHistoryView : UserControl
         _lblTotalRevenue.Text = $"₱{_allTransactions.Sum(t => t.TotalAmount):N2}";
     }
 
-    private void ApplyFilter()
+    // ═══════════════════════════════════════════════════════════
+    // Flow panel with double buffering
+    // ═══════════════════════════════════════════════════════════
+    private sealed class BufferedFlow : FlowLayoutPanel
     {
-        var term = _txtSearch.Text.Trim().ToLower();
-        var payment = _cbPayment.SelectedItem?.ToString() ?? "All Payments";
-        var range = _cbDateRange.SelectedItem?.ToString() ?? "All Time";
-
-        var filtered = _allTransactions.AsEnumerable();
-
-        // Search
-        if (!string.IsNullOrWhiteSpace(term))
-        {
-            filtered = filtered.Where(t =>
-                t.InvoiceNumber.ToLower().Contains(term) ||
-                t.CashierName.ToLower().Contains(term));
-        }
-
-        // Payment filter
-        if (payment != "All Payments")
-            filtered = filtered.Where(t => t.PaymentMethod == payment);
-
-        // Date filter
-        var now = DateTime.UtcNow;
-        filtered = range switch
-        {
-            "Today" => filtered.Where(t => t.SaleDate.Date == now.Date),
-            "This Week" => filtered.Where(t => t.SaleDate >= now.AddDays(-7)),
-            "This Month" => filtered.Where(t => t.SaleDate >= now.AddDays(-30)),
-            "This Year" => filtered.Where(t => t.SaleDate >= now.AddDays(-365)),
-            _ => filtered
-        };
-
-        var result = filtered.OrderByDescending(t => t.SaleDate).ToList();
-
-        _grid.DataSource = null;
-        _grid.DataSource = result;
-        _lblResultCount.Text = $"{result.Count} result(s)";
+        public BufferedFlow() { DoubleBuffered = true; }
     }
 
-    // ─── Detail dialog ───
-    private void ShowDetails()
+    // ═══════════════════════════════════════════════════════════
+    // Column header strip
+    // ═══════════════════════════════════════════════════════════
+    private sealed class GridHeader : Control
     {
-        if (_grid.CurrentRow?.DataBoundItem is not TransactionRow t) return;
-
-        using var dlg = new Form
+        private static readonly string[] Titles =
         {
-            Text = $"Transaction {t.InvoiceNumber}",
-            Size = new Size(480, 460),
-            StartPosition = FormStartPosition.CenterParent,
-            BackColor = AppTheme.CardBackground,
-            FormBorderStyle = FormBorderStyle.FixedDialog,
-            MaximizeBox = false,
-            MinimizeBox = false
+            "Invoice #", "Date", "Cashier", "Items", "Subtotal", "Discount", "Total", "Payment", "Status"
         };
+        private static readonly Font TitleFont = new("Segoe UI Semibold", 8.5f);
 
-        var lblHeader = new Label
+        public GridHeader()
         {
-            Text = $"Invoice: {t.InvoiceNumber}",
-            Font = new Font("Segoe UI", 14, FontStyle.Bold),
-            ForeColor = AppTheme.TextPrimary,
-            Location = new Point(24, 20),
-            AutoSize = true
-        };
-
-        var lines = new List<(string Label, string Value)>
-        {
-            ("Date",        t.SaleDate.ToString("MMMM dd, yyyy HH:mm:ss")),
-            ("Cashier",     t.CashierName),
-            ("Payment",     t.PaymentMethod),
-            ("Items",       t.ItemCount.ToString()),
-            ("Subtotal",    $"₱{t.Subtotal:N2}"),
-            ("Discount",    t.DiscountAmount > 0 ? $"₱{t.DiscountAmount:N2} ({t.DiscountType})" : "None"),
-            ("VAT (12%)",   t.VatExemptSales > 0 ? "Exempt" : $"₱{t.VatAmount:N2}"),
-            ("Total",       $"₱{t.TotalAmount:N2}"),
-            ("Amount Paid", $"₱{t.AmountPaid:N2}"),
-            ("Change",      $"₱{t.ChangeDue:N2}"),
-        };
-
-        int y = 66;
-        foreach (var (label, value) in lines)
-        {
-            dlg.Controls.Add(new Label
-            {
-                Text = label,
-                ForeColor = AppTheme.TextSecondary,
-                Font = new Font("Segoe UI", 9, FontStyle.Bold),
-                Location = new Point(24, y),
-                Size = new Size(140, 24)
-            });
-            dlg.Controls.Add(new Label
-            {
-                Text = value,
-                ForeColor = label == "Total" ? AppTheme.Success : AppTheme.TextPrimary,
-                Font = label == "Total"
-                    ? new Font("Segoe UI", 11, FontStyle.Bold)
-                    : new Font("Segoe UI", 9.5f),
-                Location = new Point(170, y),
-                Size = new Size(280, 24),
-                TextAlign = ContentAlignment.MiddleLeft
-            });
-            y += 30;
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint |
+                     ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            Height = 42;
         }
 
-        var btnClose = new Button
+        protected override void OnPaint(PaintEventArgs e)
         {
-            Text = "Close",
-            Location = new Point(24, 372),
-            Size = new Size(426, 40),
-            BackColor = AppTheme.Primary,
-            ForeColor = Color.White,
-            Font = AppTheme.FontButton,
-            FlatStyle = FlatStyle.Flat,
-            Cursor = Cursors.Hand
-        };
-        btnClose.FlatAppearance.BorderSize = 0;
-        btnClose.Click += (s, e) => dlg.Close();
+            var g = e.Graphics;
+            g.Clear(AppTheme.AppBackground);
 
-        dlg.Controls.Add(lblHeader);
-        dlg.Controls.Add(btnClose);
-        dlg.ShowDialog();
+            var cols = SummaryBar.ColumnRects(Width, Height);
+            for (int i = 0; i < Titles.Length; i++)
+            {
+                bool right = SummaryBar.IsRightAligned(i);
+                TextRenderer.DrawText(g, Titles[i], TitleFont, SummaryBar.TextRect(cols[i], right),
+                    AppTheme.TextSecondary, SummaryBar.Flags(right));
+            }
+
+            // Actions column header
+            TextRenderer.DrawText(g, "Actions", TitleFont,
+                new Rectangle(Width - SummaryBar.ActionsWidth, 0, SummaryBar.ActionsWidth - 24, Height),
+                AppTheme.TextSecondary, SummaryBar.Flags(true));
+
+            using var pen = new Pen(AppTheme.Border, 1);
+            g.DrawLine(pen, 0, Height - 1, Width, Height - 1);
+        }
     }
 
-    // ─── DTO ───
+    // ═══════════════════════════════════════════════════════════
+    // Summary bar — one row
+    // ═══════════════════════════════════════════════════════════
+    private sealed class SummaryBar : Control
+    {
+        public const int ActionsWidth = 150;
+
+        // Invoice, Date, Cashier, Items, Subtotal, Discount, Total, Payment, Status
+        private static readonly float[] Weights = { 15, 15, 13, 6, 11, 11, 12, 9, 9 };
+        private static readonly Font CellFont = AppTheme.FontBody;
+        private static readonly Font MonoCellFont = AppTheme.FontMono;
+        private static readonly Font TotalFont = new("Segoe UI Semibold", 9.5f);
+        private static readonly Font PillFont = new("Segoe UI Semibold", 8.5f);
+        private static readonly Font ActionFont = new("Segoe UI Semibold", 9.5f);
+        private static readonly Font ActionHoverFont = new("Segoe UI Semibold", 9.5f, FontStyle.Underline);
+
+        private readonly TransactionRow _data;
+        private bool _rowHover;
+        private bool _actionHover;
+        private bool _expanded;
+
+        public event EventHandler? ToggleClicked;
+
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public bool Expanded
+        {
+            get => _expanded;
+            set { _expanded = value; Invalidate(); }
+        }
+
+        public SummaryBar(TransactionRow data)
+        {
+            _data = data;
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint |
+                     ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        }
+
+        public static Rectangle[] ColumnRects(int width, int height)
+        {
+            const int left = 24;
+            int usable = Math.Max(120, width - left - ActionsWidth);
+            float total = Weights.Sum();
+            var rects = new Rectangle[Weights.Length];
+            int x = left;
+            for (int i = 0; i < Weights.Length; i++)
+            {
+                int w = (int)(usable * Weights[i] / total);
+                rects[i] = new Rectangle(x, 0, w, height);
+                x += w;
+            }
+            return rects;
+        }
+
+        public static bool IsRightAligned(int col) => col is 3 or 4 or 5 or 6;
+        public static Rectangle TextRect(Rectangle col, bool right)
+            => new(col.X, col.Y, col.Width - (right ? 20 : 8), col.Height);
+
+        public static TextFormatFlags Flags(bool right)
+            => TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis |
+               TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding |
+               (right ? TextFormatFlags.Right : TextFormatFlags.Left);
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            var bg = _expanded ? AppTheme.SidebarActive
+                   : _rowHover ? Color.FromArgb(250, 250, 249)
+                   : AppTheme.CardBackground;
+            g.Clear(bg);
+
+            if (_expanded)
+            {
+                using var bar = new SolidBrush(AppTheme.Accent);
+                g.FillRectangle(bar, 0, 0, 3, Height);
+            }
+
+            var cols = ColumnRects(Width, Height);
+
+            TextRenderer.DrawText(g, _data.InvoiceNumber, MonoCellFont,
+                TextRect(cols[0], false), AppTheme.TextPrimary, Flags(false));
+
+            TextRenderer.DrawText(g, _data.SaleDate.ToString("MMM dd, HH:mm"),
+                CellFont, TextRect(cols[1], false), AppTheme.TextSecondary, Flags(false));
+
+            TextRenderer.DrawText(g, _data.CashierName,
+                CellFont, TextRect(cols[2], false), AppTheme.TextPrimary, Flags(false));
+
+            TextRenderer.DrawText(g, _data.ItemCount.ToString(),
+                CellFont, TextRect(cols[3], true), AppTheme.TextSecondary, Flags(true));
+
+            TextRenderer.DrawText(g, $"₱{_data.Subtotal:N2}",
+                CellFont, TextRect(cols[4], true), AppTheme.TextSecondary, Flags(true));
+
+            TextRenderer.DrawText(g,
+                _data.DiscountAmount > 0 ? $"-₱{_data.DiscountAmount:N2}" : "₱0.00",
+                CellFont, TextRect(cols[5], true),
+                _data.DiscountAmount > 0 ? AppTheme.Danger : AppTheme.TextMuted, Flags(true));
+
+            TextRenderer.DrawText(g, $"₱{_data.TotalAmount:N2}",
+                TotalFont, TextRect(cols[6], true), AppTheme.TextPrimary, Flags(true));
+
+            // Payment pill
+            DrawPill(g, cols[7], _data.PaymentMethod,
+                _data.PaymentMethod == "Cash" ? AppTheme.Success : AppTheme.Primary,
+                _data.PaymentMethod == "Cash" ? Color.FromArgb(220, 245, 235) : Color.FromArgb(230, 240, 255));
+
+            // Status pill
+            DrawPill(g, cols[8], "Completed", AppTheme.TextSecondary, Color.FromArgb(244, 244, 245));
+
+            // Actions
+            var actionText = _expanded ? "Close" : "View Details";
+            var size = TextRenderer.MeasureText(actionText, ActionFont, Size.Empty, TextFormatFlags.NoPadding);
+            int ax = Width - 24 - size.Width;
+            int ay = (Height - 30) / 2;
+            var actionRect = new Rectangle(ax - 4, ay, size.Width + 8, 30);
+
+            TextRenderer.DrawText(g, actionText, _actionHover ? ActionHoverFont : ActionFont,
+                actionRect, AppTheme.Primary,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        }
+
+        private static void DrawPill(Graphics g, Rectangle col, string text, Color fg, Color fill)
+        {
+            var size = TextRenderer.MeasureText(text, PillFont, Size.Empty, TextFormatFlags.NoPadding);
+            var pill = new Rectangle(col.X, (col.Height - 24) / 2,
+                Math.Min(size.Width + 22, col.Width - 8), 24);
+
+            using var path = RoundedRect(pill, 12);
+            using var brush = new SolidBrush(fill);
+            g.FillPath(brush, path);
+
+            TextRenderer.DrawText(g, text, PillFont, pill, fg,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        }
+
+        private static GraphicsPath RoundedRect(Rectangle r, int radius)
+        {
+            int d = radius * 2;
+            var path = new GraphicsPath();
+            path.AddArc(r.X, r.Y, d, d, 180, 90);
+            path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+            path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+            path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
+
+        // ── Mouse ──
+        private bool ActionHitTest(Point p)
+        {
+            var actionText = _expanded ? "Close" : "View Details";
+            var size = TextRenderer.MeasureText(actionText, ActionFont, Size.Empty, TextFormatFlags.NoPadding);
+            int ax = Width - 24 - size.Width;
+            int ay = (Height - 30) / 2;
+            var rect = new Rectangle(ax - 4, ay, size.Width + 8, 30);
+            return rect.Contains(p);
+        }
+
+        protected override void OnMouseEnter(EventArgs e) { _rowHover = true; Invalidate(); base.OnMouseEnter(e); }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            _rowHover = false;
+            _actionHover = false;
+            Cursor = Cursors.Default;
+            Invalidate();
+            base.OnMouseLeave(e);
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            bool hov = ActionHitTest(e.Location);
+            if (hov != _actionHover)
+            {
+                _actionHover = hov;
+                Cursor = hov ? Cursors.Hand : Cursors.Default;
+                Invalidate();
+            }
+            base.OnMouseMove(e);
+        }
+
+        protected override void OnMouseClick(MouseEventArgs e)
+        {
+            base.OnMouseClick(e);
+            if (e.Button != MouseButtons.Left) return;
+            if (ActionHitTest(e.Location)) ToggleClicked?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // Row = summary + expandable details
+    // ═══════════════════════════════════════════════════════════
+    private sealed class TransactionItem : Panel
+    {
+        private const int SummaryHeight = 56;
+
+        private readonly SummaryBar _summary;
+        private readonly SaleDetailsPanel _details;
+
+        public event EventHandler? ToggleRequested;
+
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public TransactionRow Data { get; }
+
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public bool Expanded { get; private set; }
+
+        public TransactionItem(TransactionRow data)
+        {
+            Data = data;
+            Margin = Padding.Empty;
+            Padding = new Padding(0, 0, 0, 1);
+            Height = SummaryHeight + 1;
+            BackColor = AppTheme.CardBackground;
+            DoubleBuffered = true;
+
+            _details = new SaleDetailsPanel(data)
+            {
+                Dock = DockStyle.Bottom,
+                Visible = false,
+                Height = 0  // set on expand
+            };
+
+            _summary = new SummaryBar(data) { Dock = DockStyle.Top, Height = SummaryHeight };
+            _summary.ToggleClicked += (s, e) => ToggleRequested?.Invoke(this, EventArgs.Empty);
+
+            Controls.Add(_details);
+            Controls.Add(_summary);
+
+            Paint += (s, e) =>
+            {
+                using var pen = new Pen(AppTheme.BorderLight, 1);
+                e.Graphics.DrawLine(pen, 0, Height - 1, Width, Height - 1);
+            };
+        }
+
+        public void SetExpanded(bool expanded)
+        {
+            if (Expanded == expanded) return;
+            Expanded = expanded;
+
+            SuspendLayout();
+            _summary.Expanded = expanded;
+            _details.Visible = expanded;
+
+            if (expanded)
+            {
+                _details.Height = _details.PreferredHeight;
+                Height = SummaryHeight + 1 + _details.PreferredHeight;
+            }
+            else
+            {
+                Height = SummaryHeight + 1;
+            }
+            ResumeLayout(true);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // Details panel — one aligned 4-column grid (label above value)
+    // ═══════════════════════════════════════════════════════════
+    private sealed class SaleDetailsPanel : Control
+    {
+        private const int Columns = 4;
+        private const int RowHeight = 54;
+        private const int SidePadding = 28;
+        private const int VerticalPadding = 12;
+
+        private static readonly Font LabelFont = new("Segoe UI", 8.5f);
+        private static readonly Font ValueFont = new("Segoe UI Semibold", 10.5f);
+
+        private readonly record struct Cell(string Label, string Value, Color Color);
+
+        private readonly List<Cell?[]> _rows = new();
+
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public int PreferredHeight { get; }
+
+        public SaleDetailsPanel(TransactionRow d)
+        {
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint |
+                     ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            BackColor = Color.FromArgb(251, 251, 250);
+
+            var normal = AppTheme.TextPrimary;
+            string Dash(string? s) => string.IsNullOrWhiteSpace(s) ? "—" : s!;
+
+            // Row 1 — payment + total
+            _rows.Add(new Cell?[]
+            {
+                new Cell("Payment Method", d.PaymentMethod, normal),
+                new Cell("Reference No.", Dash(d.PaymentReference), normal),
+                new Cell("Items Sold", d.ItemCount.ToString(), normal),
+                new Cell("Total", $"₱{d.TotalAmount:N2}", AppTheme.Success)
+            });
+
+            // Row 2 — VAT breakdown
+            _rows.Add(new Cell?[]
+            {
+                new Cell("Subtotal (VAT incl.)", $"₱{d.Subtotal:N2}", normal),
+                new Cell("VATable Sales", $"₱{d.VatableSales:N2}", normal),
+                new Cell("VAT (12%)", $"₱{d.VatAmount:N2}", normal),
+                new Cell("VAT-Exempt Sales", $"₱{d.VatExemptSales:N2}", normal)
+            });
+
+            // Row 3 — cash handling (+ discount when there is one)
+            _rows.Add(new Cell?[]
+            {
+                new Cell("Amount Paid", $"₱{d.AmountPaid:N2}", normal),
+                new Cell("Change", $"₱{d.ChangeDue:N2}", normal),
+                d.DiscountAmount > 0
+                    ? new Cell($"{d.DiscountType} Discount", $"-₱{d.DiscountAmount:N2}", AppTheme.Danger)
+                    : null,
+                null
+            });
+
+            // Row 4 — discount customer details (only when applicable)
+            if (d.DiscountAmount > 0)
+            {
+                _rows.Add(new Cell?[]
+                {
+                    new Cell("Customer Name", Dash(d.CustomerName), normal),
+                    new Cell("ID Number", Dash(d.CustomerIdNumber), normal),
+                    null,
+                    null
+                });
+            }
+
+            PreferredHeight = _rows.Count * RowHeight + VerticalPadding * 2;
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.Clear(BackColor);
+
+            int colWidth = Math.Max(1, (Width - SidePadding * 2) / Columns);
+            const TextFormatFlags flags = TextFormatFlags.Left | TextFormatFlags.VerticalCenter |
+                                          TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix |
+                                          TextFormatFlags.NoPadding;
+
+            for (int r = 0; r < _rows.Count; r++)
+            {
+                int y = VerticalPadding + r * RowHeight;
+
+                for (int c = 0; c < Columns; c++)
+                {
+                    if (_rows[r][c] is not { } cell) continue;
+
+                    int x = SidePadding + c * colWidth;
+                    int w = colWidth - 16;
+
+                    TextRenderer.DrawText(g, cell.Label, LabelFont, new Rectangle(x, y, w, 18),
+                        AppTheme.TextMuted, flags);
+                    TextRenderer.DrawText(g, cell.Value, ValueFont, new Rectangle(x, y + 20, w, 24),
+                        cell.Color, flags);
+                }
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // DTO
+    // ═══════════════════════════════════════════════════════════
     public class TransactionRow
     {
         public int SaleId { get; set; }
@@ -544,8 +882,14 @@ public class TransactionHistoryView : UserControl
         public string CashierName { get; set; } = "";
         public string PaymentMethod { get; set; } = "";
         public string DiscountType { get; set; } = "";
+
+        public string? CustomerName { get; set; }
+        public string? CustomerIdNumber { get; set; }
+        public string? PaymentReference { get; set; }
+
         public decimal Subtotal { get; set; }
         public decimal DiscountAmount { get; set; }
+        public decimal VatableSales { get; set; }
         public decimal VatAmount { get; set; }
         public decimal VatExemptSales { get; set; }
         public decimal TotalAmount { get; set; }
@@ -553,6 +897,5 @@ public class TransactionHistoryView : UserControl
         public decimal ChangeDue { get; set; }
         public DateTime SaleDate { get; set; }
         public int ItemCount { get; set; }
-        public string StatusLabel => "✓ Completed";
     }
 }

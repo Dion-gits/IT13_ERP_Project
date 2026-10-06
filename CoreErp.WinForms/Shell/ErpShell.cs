@@ -1,4 +1,5 @@
 ﻿using CoreErp.WinForms.Theme;
+using System.ComponentModel;
 using System.Drawing.Drawing2D;
 
 namespace CoreErp.WinForms.Shell;
@@ -175,6 +176,8 @@ public class ErpShell : Form
     {
         private bool _active;
 
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public bool Active
         {
             get => _active;
@@ -238,7 +241,6 @@ public class ErpShell : Form
             for (int i = 0; i < rays; i++)
             {
                 double a = i * 2 * Math.PI / rays - Math.PI / 2;
-                // length wobbles like the logo's uneven spiral
                 float t = 0.55f + 0.45f * (float)(0.5 + 0.5 * Math.Sin(a * 1.0 + 0.9));
                 float outer = inner + (outerMax - inner) * t;
 

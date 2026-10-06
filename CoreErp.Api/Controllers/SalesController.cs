@@ -1,4 +1,4 @@
-﻿using CoreErp.Api.Dtos;
+using CoreErp.Api.Dtos;
 using CoreErp.Domain.Entities;
 using CoreErp.Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -64,9 +64,15 @@ public sealed class SalesController : ControllerBase
                 s.InvoiceNumber,
                 s.CashierName,
                 s.PaymentMethod,
+                s.PaymentReference,      // NEW
                 s.DiscountType,
+                s.CustomerName,          // NEW
+                s.CustomerIdNumber,      // NEW
                 s.Subtotal,
                 s.DiscountAmount,
+                s.VatableSales,          // NEW
+                s.VatAmount,             // NEW
+                s.VatExemptSales,        // NEW
                 s.TotalAmount,
                 s.AmountPaid,
                 s.ChangeDue,
@@ -78,6 +84,52 @@ public sealed class SalesController : ControllerBase
         return Ok(sales);
     }
 
+    [HttpGet("{id:int}")]
+    public async Task<IActionResult> GetById(int companyId, int id)
+    {
+        await using var db = await _factory.CreateAsync(companyId);
+
+        var sale = await db.Sales
+            .Include(s => s.SaleItems)
+                .ThenInclude(si => si.Product)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.SaleId == id);
+
+        if (sale == null)
+            return NotFound(new { message = $"Sale {id} not found." });
+
+        return Ok(new
+        {
+            sale.SaleId,
+            sale.InvoiceNumber,
+            sale.CashierName,
+            sale.PaymentMethod,
+            sale.DiscountType,
+            sale.Subtotal,
+            sale.DiscountAmount,
+            sale.CustomerName,
+            sale.CustomerIdNumber,
+            sale.PaymentReference,
+            sale.VatableSales,
+            sale.VatAmount,
+            sale.VatExemptSales,
+            sale.TotalAmount,
+            sale.AmountPaid,
+            sale.ChangeDue,
+            sale.SaleDate,
+            ItemCount = sale.SaleItems.Count,
+            Items = sale.SaleItems.Select(si => new
+            {
+                si.ProductId,
+                ProductCode = si.Product != null ? si.Product.ProductCode : "",
+                ProductName = si.Product != null ? si.Product.ProductName : "Product #" + si.ProductId,
+                si.Quantity,
+                si.UnitPrice,
+                si.SubTotal
+            }).ToList()
+        });
+    }
+
     [HttpPost]
     public async Task<IActionResult> Create(int companyId, [FromBody] CreateSaleRequest req)
     {
@@ -86,6 +138,19 @@ public sealed class SalesController : ControllerBase
 
         if (req.AmountPaid < 0)
             return BadRequest(new { message = "Invalid amount paid." });
+
+        // ── Validate discount details ──
+        if (req.DiscountType is "Senior" or "PWD")
+        {
+            if (string.IsNullOrWhiteSpace(req.CustomerName))
+                return BadRequest(new { message = "Customer name is required for Senior/PWD discount." });
+            if (string.IsNullOrWhiteSpace(req.CustomerIdNumber))
+                return BadRequest(new { message = "Customer ID number is required for Senior/PWD discount." });
+        }
+
+        // ── Validate payment reference for GCash ──
+        if (req.PaymentMethod == "GCash" && string.IsNullOrWhiteSpace(req.PaymentReference))
+            return BadRequest(new { message = "GCash reference number is required." });
 
         await using var db = await _factory.CreateAsync(companyId);
         await using var tx = await db.Database.BeginTransactionAsync();
@@ -112,7 +177,6 @@ public sealed class SalesController : ControllerBase
                 if (!products.ContainsKey(item.ProductId))
                     return BadRequest(new { message = $"Product {item.ProductId} not found." });
 
-                // Archived products can't be sold
                 if (!products[item.ProductId].IsActive)
                     return BadRequest(new { message = $"{products[item.ProductId].ProductName} is archived and can't be sold." });
 
@@ -131,15 +195,32 @@ public sealed class SalesController : ControllerBase
                 subtotal += item.Quantity * products[item.ProductId].UnitPrice;
             }
 
-            // 2. Compute discount + total
-            decimal discountAmount = req.DiscountType switch
-            {
-                "Senior" => Math.Round(subtotal * SENIOR_PWD_DISCOUNT, 2),
-                "PWD" => Math.Round(subtotal * SENIOR_PWD_DISCOUNT, 2),
-                _ => 0m
-            };
+            // 2. Compute VAT + discount
+            const decimal VAT_RATE = 0.12m;
+            const decimal SENIOR_PWD_DISCOUNT = 0.20m;
 
-            decimal total = subtotal - discountAmount;
+            decimal vatableSales = 0, vatAmount = 0, vatExemptSales = 0, discountAmount = 0, total = 0;
+
+            if (req.DiscountType is "Senior" or "PWD")
+            {
+                // Senior/PWD: remove VAT first, then 20% off the net amount
+                decimal net = Math.Round(subtotal / (1 + VAT_RATE), 2);
+                vatExemptSales = net;
+                vatAmount = 0;
+                vatableSales = 0;
+                discountAmount = Math.Round(net * SENIOR_PWD_DISCOUNT, 2);
+                total = net - discountAmount;
+            }
+            else
+            {
+                // Regular: VAT-inclusive
+                decimal net = Math.Round(subtotal / (1 + VAT_RATE), 2);
+                vatAmount = subtotal - net;
+                vatableSales = net;
+                vatExemptSales = 0;
+                discountAmount = 0;
+                total = subtotal;
+            }
 
             if (req.PaymentMethod == "Cash" && req.AmountPaid < total)
                 return BadRequest(new { message = "Amount paid is less than total." });
@@ -155,6 +236,12 @@ public sealed class SalesController : ControllerBase
                 Subtotal = subtotal,
                 DiscountType = req.DiscountType,
                 DiscountAmount = discountAmount,
+                CustomerName = string.IsNullOrWhiteSpace(req.CustomerName) ? null : req.CustomerName.Trim(),
+                CustomerIdNumber = string.IsNullOrWhiteSpace(req.CustomerIdNumber) ? null : req.CustomerIdNumber.Trim(),
+                PaymentReference = string.IsNullOrWhiteSpace(req.PaymentReference) ? null : req.PaymentReference.Trim(),
+                VatableSales = vatableSales,
+                VatAmount = vatAmount,
+                VatExemptSales = vatExemptSales,
                 TotalAmount = total,
                 AmountPaid = req.PaymentMethod == "Cash" ? req.AmountPaid : total,
                 ChangeDue = req.PaymentMethod == "Cash" ? (req.AmountPaid - total) : 0,
@@ -205,6 +292,12 @@ public sealed class SalesController : ControllerBase
                 DiscountType = sale.DiscountType,
                 Subtotal = sale.Subtotal,
                 DiscountAmount = sale.DiscountAmount,
+                CustomerName = sale.CustomerName,
+                CustomerIdNumber = sale.CustomerIdNumber,
+                PaymentReference = sale.PaymentReference,
+                VatableSales = sale.VatableSales,
+                VatAmount = sale.VatAmount,
+                VatExemptSales = sale.VatExemptSales,
                 TotalAmount = sale.TotalAmount,
                 AmountPaid = sale.AmountPaid,
                 ChangeDue = sale.ChangeDue,

@@ -7,6 +7,12 @@ public class CreateSaleRequest
     public string DiscountType { get; set; } = "None";        // None, Senior, PWD
     public string PaymentMethod { get; set; } = "Cash";       // Cash, GCash
     public decimal AmountPaid { get; set; }
+
+    // NEW
+    public string? CustomerName { get; set; }
+    public string? CustomerIdNumber { get; set; }
+    public string? PaymentReference { get; set; }
+
     public List<CreateSaleItem> Items { get; set; } = new();
 }
 
@@ -24,6 +30,12 @@ public class SaleReceiptDto
     public string DiscountType { get; set; } = "";
     public decimal Subtotal { get; set; }
     public decimal DiscountAmount { get; set; }
+
+    // NEW
+    public string? CustomerName { get; set; }
+    public string? CustomerIdNumber { get; set; }
+    public string? PaymentReference { get; set; }
+
     public decimal VatableSales { get; set; }
     public decimal VatAmount { get; set; }
     public decimal VatExemptSales { get; set; }
