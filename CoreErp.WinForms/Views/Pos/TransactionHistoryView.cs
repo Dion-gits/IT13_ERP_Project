@@ -17,10 +17,7 @@ public class TransactionHistoryView : UserControl
     private Label _lblStatus = null!;
     private Label _lblResultCount = null!;
 
-    private Label _lblTodayCount = null!;
-    private Label _lblTodayRevenue = null!;
-    private Label _lblTotalCount = null!;
-    private Label _lblTotalRevenue = null!;
+    private StatStrip _statStrip = null!;
 
     private List<TransactionRow> _allTransactions = new();
     private readonly List<TransactionItem> _items = new();
@@ -71,23 +68,26 @@ public class TransactionHistoryView : UserControl
             RowCount = 3,
             BackColor = AppTheme.AppBackground
         };
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));    // cards
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 148));   // strip
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));    // filters
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));    // list card
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));    // list
 
-        // ── Stat cards ──
-        var pnlCards = new FlowLayoutPanel
+        // ── Stat strip (single card, divided columns) ──
+        _statStrip = new StatStrip(
+            "Sales Overview",
+            "Today's Transactions",
+            "Today's Revenue",
+            "Total Transactions",
+            "Total Revenue");
+
+        var pnlCards = new Panel
         {
             Dock = DockStyle.Fill,
-            FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false,
             BackColor = AppTheme.AppBackground,
             Padding = new Padding(0, 8, 0, 8)
         };
-        pnlCards.Controls.Add(CreateStatCard("Today's Transactions", out _lblTodayCount));
-        pnlCards.Controls.Add(CreateStatCard("Today's Revenue", out _lblTodayRevenue));
-        pnlCards.Controls.Add(CreateStatCard("Total Transactions", out _lblTotalCount));
-        pnlCards.Controls.Add(CreateStatCard("Total Revenue", out _lblTotalRevenue));
+        _statStrip.Dock = DockStyle.Fill;
+        pnlCards.Controls.Add(_statStrip);
 
         // ── Filters ──
         var pnlFilters = new Panel
@@ -190,7 +190,7 @@ public class TransactionHistoryView : UserControl
         });
         pnlFilters.Resize += (s, e) => _lblResultCount.Location = new Point(pnlFilters.Width - 90, 22);
 
-        // ── List card (header + scrollable rows) ──
+        // ── List card ──
         var card = new Panel
         {
             Dock = DockStyle.Fill,
@@ -213,8 +213,8 @@ public class TransactionHistoryView : UserControl
         };
         _list.ClientSizeChanged += (s, e) => FitWidths();
 
-        card.Controls.Add(_list);                               // Fill first
-        card.Controls.Add(new GridHeader { Dock = DockStyle.Top }); // then Top
+        card.Controls.Add(_list);
+        card.Controls.Add(new GridHeader { Dock = DockStyle.Top });
 
         // ── Status ──
         _lblStatus = new Label
@@ -236,58 +236,6 @@ public class TransactionHistoryView : UserControl
         Controls.Add(layout);
         Controls.Add(_lblStatus);
         Controls.Add(pnlHeader);
-    }
-
-    // ─── Stat card ───
-    private static Panel CreateStatCard(string title, out Label valueLabel)
-    {
-        var card = new Panel
-        {
-            Width = 280,
-            Height = 72,
-            BackColor = AppTheme.CardBackground,
-            Margin = new Padding(0, 0, 14, 0)
-        };
-        card.Paint += (s, e) =>
-        {
-            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            using var path = GetRoundedRect(new Rectangle(0, 0, card.Width - 1, card.Height - 1), 10);
-            using var pen = new Pen(AppTheme.Border, 1);
-            e.Graphics.DrawPath(pen, path);
-        };
-
-        var table = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 2,
-            RowCount = 1,
-            Padding = new Padding(20, 0, 20, 0),
-            BackColor = Color.Transparent
-        };
-        table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 62));
-        table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38));
-
-        var lblTitle = new Label
-        {
-            Text = title,
-            ForeColor = AppTheme.TextSecondary,
-            Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
-            Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleLeft
-        };
-        valueLabel = new Label
-        {
-            Text = "0",
-            ForeColor = AppTheme.TextPrimary,
-            Font = new Font("Segoe UI", 17, FontStyle.Bold),
-            Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleRight
-        };
-
-        table.Controls.Add(lblTitle, 0, 0);
-        table.Controls.Add(valueLabel, 1, 0);
-        card.Controls.Add(table);
-        return card;
     }
 
     private static GraphicsPath GetRoundedRect(Rectangle bounds, int radius)
@@ -450,10 +398,11 @@ public class TransactionHistoryView : UserControl
         var today = DateTime.UtcNow.Date;
         var todayTx = _allTransactions.Where(t => t.SaleDate.Date == today).ToList();
 
-        _lblTodayCount.Text = todayTx.Count.ToString("N0");
-        _lblTodayRevenue.Text = $"₱{todayTx.Sum(t => t.TotalAmount):N2}";
-        _lblTotalCount.Text = _allTransactions.Count.ToString("N0");
-        _lblTotalRevenue.Text = $"₱{_allTransactions.Sum(t => t.TotalAmount):N2}";
+        _statStrip.SetValues(
+            todayTx.Count.ToString("N0"),
+            $"₱{todayTx.Sum(t => t.TotalAmount):N2}",
+            _allTransactions.Count.ToString("N0"),
+            $"₱{_allTransactions.Sum(t => t.TotalAmount):N2}");
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -730,7 +679,7 @@ public class TransactionHistoryView : UserControl
             {
                 Dock = DockStyle.Bottom,
                 Visible = false,
-                Height = 0  // set on expand
+                Height = 0
             };
 
             _summary = new SummaryBar(data) { Dock = DockStyle.Top, Height = SummaryHeight };
@@ -868,6 +817,74 @@ public class TransactionHistoryView : UserControl
                     TextRenderer.DrawText(g, cell.Value, ValueFont, new Rectangle(x, y + 20, w, 24),
                         cell.Color, flags);
                 }
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // Stat strip — one card, title on top, metrics in divided columns
+    // ═══════════════════════════════════════════════════════════
+    private sealed class StatStrip : Control
+    {
+        private static readonly Font TitleFont = new("Segoe UI", 12f);
+        private static readonly Font LabelFont = new("Segoe UI", 9f);
+        private static readonly Font ValueFont = new("Segoe UI Semibold", 18f); // Slightly adjusted down to prevent vertical clipping
+
+        private const TextFormatFlags Flags = TextFormatFlags.Left | TextFormatFlags.VerticalCenter |
+                                             TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix |
+                                             TextFormatFlags.NoPadding;
+
+        private readonly string _title;
+        private readonly string[] _labels;
+        private readonly string[] _values;
+
+        public StatStrip(string title, params string[] labels)
+        {
+            _title = title;
+            _labels = labels;
+            _values = labels.Select(_ => "0").ToArray();
+
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint |
+                     ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        }
+
+        public void SetValues(params string[] values)
+        {
+            for (int i = 0; i < Math.Min(values.Length, _values.Length); i++)
+                _values[i] = values[i];
+            Invalidate();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.Clear(AppTheme.CardBackground);
+
+            using (var border = new Pen(AppTheme.Border, 1))
+                g.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
+
+            TextRenderer.DrawText(g, _title, TitleFont, new Rectangle(24, 10, Width - 48, 24),
+                AppTheme.TextPrimary, Flags);
+
+            const int top = 44; // Adjusted starting Y coordinate for columns
+            int count = _labels.Length;
+            int colWidth = (Width - 48) / count;
+
+            using var divider = new Pen(AppTheme.Border, 1);
+
+            for (int i = 0; i < count; i++)
+            {
+                int x = 24 + i * colWidth;
+                int textX = i == 0 ? x : x + 20;
+                int textW = colWidth - (i == 0 ? 12 : 32);
+
+                if (i > 0)
+                    g.DrawLine(divider, x, top + 2, x, Height - 14);
+
+                TextRenderer.DrawText(g, _labels[i], LabelFont, new Rectangle(textX, top, textW, 18),
+                    AppTheme.TextSecondary, Flags);
+                TextRenderer.DrawText(g, _values[i], ValueFont, new Rectangle(textX, top + 18, textW, 40),
+                    AppTheme.TextPrimary, Flags);
             }
         }
     }

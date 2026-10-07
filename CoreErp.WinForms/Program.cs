@@ -16,21 +16,21 @@ namespace CoreErp.WinForms
                 new()
                 {
                     Key = "pos",
-                    Icon = "🛒",
-                    Label = "Point of Sale",
+                    Icon = "",
+                    Label = "POS",
                     ViewFactory = () => new PosView()
                 },
                 new()
                 {
                     Key = "transactions",           // ← NEW
-                    Icon = "📜",                     // ← NEW
+                    Icon = "",                     // ← NEW
                     Label = "Transaction History",  // ← NEW
                     ViewFactory = () => new TransactionHistoryView()  // ← NEW
                 },
                 new()
                 {
                     Key = "inventory",
-                    Icon = "📦",
+                    Icon = "",
                     Label = "Inventory",
                     ViewFactory = () => new InventoryListView()
                 },
