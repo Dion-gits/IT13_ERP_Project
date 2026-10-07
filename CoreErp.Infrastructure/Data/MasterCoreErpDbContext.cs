@@ -9,6 +9,7 @@ public class MasterCoreErpDbContext : IdentityDbContext
     public DbSet<Company> Companies => Set<Company>();
     public DbSet<CompanyDatabase> CompanyDatabases => Set<CompanyDatabase>();
     public DbSet<Device> Devices => Set<Device>();
+    public DbSet<PlatformUser> PlatformUsers => Set<PlatformUser>();   // ← NEW
 
     public MasterCoreErpDbContext(DbContextOptions<MasterCoreErpDbContext> options) : base(options) { }
 
@@ -50,6 +51,17 @@ public class MasterCoreErpDbContext : IdentityDbContext
                   .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasIndex(x => new { x.CompanyId, x.DeviceCode }).IsUnique();
+        });
+
+        // ── Platform users (SuperAdmin) ──
+        builder.Entity<PlatformUser>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Email).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.Password).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.FullName).HasMaxLength(200);
+            entity.Property(x => x.Role).HasMaxLength(50);
+            entity.HasIndex(x => x.Email).IsUnique();
         });
     }
 }

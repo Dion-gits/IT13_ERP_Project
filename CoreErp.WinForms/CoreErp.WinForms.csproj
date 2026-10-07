@@ -9,16 +9,22 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Content Include="Assets\Logo.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="ReaLTaiizor" Version="3.8.2.1" />
   </ItemGroup>
 
   <ItemGroup>
+    <Folder Include="Views\Login\" />
     <Folder Include="Views\Roles\HrManager\" />
     <Folder Include="Views\Roles\BranchManager\" />
     <Folder Include="Views\Roles\InventoryStaff\" />
     <Folder Include="Views\Roles\Cashier\" />
     <Folder Include="Views\Roles\Owner\" />
-    <Folder Include="Views\Roles\SuperAdmin\" />
   </ItemGroup>
 
 </Project>

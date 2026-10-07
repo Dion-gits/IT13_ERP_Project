@@ -1,6 +1,5 @@
 using CoreErp.WinForms.Shell;
-using CoreErp.WinForms.Views.Inventory;
-using CoreErp.WinForms.Views.POS;
+using CoreErp.WinForms.Views.Auth;
 
 namespace CoreErp.WinForms
 {
@@ -11,34 +10,17 @@ namespace CoreErp.WinForms
         {
             ApplicationConfiguration.Initialize();
 
-            var navItems = new List<ErpShell.NavItem>
-            {
-                new()
-                {
-                    Key = "pos",
-                    Icon = "",
-                    Label = "POS",
-                    ViewFactory = () => new PosView()
-                },
-                new()
-                {
-                    Key = "transactions",           // ← NEW
-                    Icon = "",                     // ← NEW
-                    Label = "Transaction History",  // ← NEW
-                    ViewFactory = () => new TransactionHistoryView()  // ← NEW
-                },
-                new()
-                {
-                    Key = "inventory",
-                    Icon = "",
-                    Label = "Inventory",
-                    ViewFactory = () => new InventoryListView()
-                },
-            };
+            using var login = new LoginForm();
+            if (login.ShowDialog() != DialogResult.OK || login.Result == null)
+                return;
 
+            var user = login.Result;
+            AppSession.Start(user);
+
+            var navItems = RoleNavigation.Build(user);
             Application.Run(new ErpShell(
-                roleName: "Cashier / Inventory",
-                userEmail: "staff@tenant1.com",
+                roleName: user.Role,
+                userEmail: user.Email,
                 navItems: navItems));
         }
     }

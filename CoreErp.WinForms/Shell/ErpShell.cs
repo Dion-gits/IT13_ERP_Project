@@ -1,4 +1,5 @@
-﻿using CoreErp.WinForms.Theme;
+﻿using CoreErp.WinForms.Assets;
+using CoreErp.WinForms.Theme;
 using System.ComponentModel;
 using System.Drawing.Drawing2D;
 
@@ -231,23 +232,18 @@ public class ErpShell : Form
             var g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
 
-            const int rays = 36;
-            float cx = Width / 2f, cy = Height / 2f;
-            float outerMax = Math.Min(Width, Height) / 2f - 1;
-            float inner = outerMax * 0.42f;
+            var logo = AppAssets.Logo;
+            if (logo == null) return;          // nothing to draw — header still shows the wordmark
 
-            using var pen = new Pen(AppTheme.Accent, 1.6f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+            // Fit into the control's square, keep aspect ratio
+            int size = Math.Min(Width, Height);
+            var ratio = (float)size / Math.Max(logo.Width, logo.Height);
+            int w = (int)(logo.Width * ratio);
+            int h = (int)(logo.Height * ratio);
+            var dest = new Rectangle((Width - w) / 2, (Height - h) / 2, w, h);
 
-            for (int i = 0; i < rays; i++)
-            {
-                double a = i * 2 * Math.PI / rays - Math.PI / 2;
-                float t = 0.55f + 0.45f * (float)(0.5 + 0.5 * Math.Sin(a * 1.0 + 0.9));
-                float outer = inner + (outerMax - inner) * t;
-
-                g.DrawLine(pen,
-                    cx + (float)Math.Cos(a) * inner, cy + (float)Math.Sin(a) * inner,
-                    cx + (float)Math.Cos(a) * outer, cy + (float)Math.Sin(a) * outer);
-            }
+            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            g.DrawImage(logo, dest);
         }
     }
 }

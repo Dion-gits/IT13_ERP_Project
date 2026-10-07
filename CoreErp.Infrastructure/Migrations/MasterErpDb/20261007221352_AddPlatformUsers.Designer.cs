@@ -4,6 +4,7 @@ using CoreErp.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace CoreErp.Infrastructure.Migrations.MasterErpDb
 {
     [DbContext(typeof(MasterCoreErpDbContext))]
-    partial class MasterCoreErpDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261007221352_AddPlatformUsers")]
+    partial class AddPlatformUsers
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
